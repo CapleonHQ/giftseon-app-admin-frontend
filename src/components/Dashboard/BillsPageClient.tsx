@@ -75,6 +75,7 @@ const BillsPageClient = () => {
   const meta = data?.meta
   const total = meta?.total ?? 0
   const totalPages = meta?.totalPages ?? 1
+  const totalVolume = (meta as any)?.totalVolume ?? 0
 
   const handleSearchChange = (val: string) => {
     setSearch(val)
@@ -83,7 +84,9 @@ const BillsPageClient = () => {
   }
 
   const doughnutValues = BILL_TYPE_KEYS.map((k) => breakdown?.[k]?.count ?? 0)
+  const doughnutVolumes = BILL_TYPE_KEYS.map((k) => breakdown?.[k]?.volume ?? 0)
   const totalBillCount = doughnutValues.reduce((a, b) => a + b, 0)
+  const totalBreakdownVolume = doughnutVolumes.reduce((a, b) => a + b, 0)
 
   const doughnutData = {
     labels: ['Airtime', 'Data', 'Cable TV', 'Electricity'],
@@ -92,11 +95,13 @@ const BillsPageClient = () => {
 
   return (
     <div className='flex flex-col gap-6'>
-      {/* Stats */}
-      <div className='grid grid-cols-2 lg:grid-cols-2 gap-4'>
+      {/* Summary stats */}
+      <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
         {[
           { label: 'Total Bills', value: formatNumber(total), color: 'text-primary-600', bg: 'bg-primary-50' },
-          { label: 'This Page', value: formatNumber(bills.length), color: 'text-information-600', bg: 'bg-information-50' },
+          { label: 'Total Volume', value: formatCurrency(totalVolume || totalBreakdownVolume), color: 'text-success-600', bg: 'bg-success-50' },
+          { label: 'Airtime', value: formatCurrency(breakdown?.airtime?.volume ?? 0), color: 'text-warning-600', bg: 'bg-warning-50' },
+          { label: 'Electricity', value: formatCurrency(breakdown?.electricity?.volume ?? 0), color: 'text-information-600', bg: 'bg-information-50' },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card><CardContent className='p-4'><p className='text-xs text-grey-500 mb-1'>{s.label}</p><p className={`text-lg font-semibold ${s.color}`}>{s.value}</p></CardContent></Card>
@@ -119,15 +124,18 @@ const BillsPageClient = () => {
                     <Doughnut data={doughnutData} options={{ plugins: { legend: { display: false } }, cutout: '70%' }} />
                   </div>
                   <div className='w-full flex flex-col gap-1.5'>
-                    {['Airtime', 'Data', 'Cable TV', 'Electricity'].map((label, i) => (
-                      <div key={label} className='flex items-center justify-between'>
+                    {BILL_TYPE_KEYS.map((key, i) => (
+                      <div key={key} className='flex items-center justify-between'>
                         <div className='flex items-center gap-2'>
                           <div className='w-2.5 h-2.5 rounded-full' style={{ backgroundColor: BILL_COLORS[i] }} />
-                          <span className='text-xs text-grey-600'>{label}</span>
+                          <span className='text-xs text-grey-600'>{billTypeLabel[key]}</span>
                         </div>
-                        <span className='text-xs font-medium text-grey-800'>
-                          {Math.round((doughnutValues[i] / totalBillCount) * 100)}%
-                        </span>
+                        <div className='flex items-center gap-2'>
+                          <span className='text-[10px] text-grey-400'>{formatCurrency(doughnutVolumes[i])}</span>
+                          <span className='text-xs font-medium text-grey-800'>
+                            {Math.round((doughnutValues[i] / totalBillCount) * 100)}%
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -201,7 +209,13 @@ const BillsPageClient = () => {
                                 <span className='text-xs text-grey-700'>{billTypeLabel[bill.type] ?? bill.type}</span>
                               </div>
                             </TableCell>
-                            <TableCell><p className='text-xs font-medium text-grey-800'>{bill.userName}</p></TableCell>
+                            <TableCell>
+                              <div>
+                                <p className='text-xs font-medium text-grey-800'>{bill.userName ?? '—'}</p>
+                                {bill.userEmail && <p className='text-[10px] text-grey-500'>{bill.userEmail}</p>}
+                                {bill.userTag && <p className='text-[10px] text-primary-500'>@{bill.userTag}</p>}
+                              </div>
+                            </TableCell>
                             <TableCell><Badge variant='grey' className='text-[10px]'>{bill.provider}</Badge></TableCell>
                             <TableCell><span className='text-xs font-semibold text-grey-800'>{formatCurrency(bill.amount)}</span></TableCell>
                             <TableCell><Badge variant={statusBadgeVariant(bill.status) as any} className='text-[10px] capitalize'>{bill.status}</Badge></TableCell>

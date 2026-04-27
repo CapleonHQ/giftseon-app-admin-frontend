@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Search, Filter, UserCheck, UserX, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Filter, UserCheck, UserX, Users, ChevronLeft, ChevronRight, LogIn } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { formatCurrency, formatDate, formatNumber, getInitials } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime, formatNumber, getInitials } from '@/lib/utils'
 import type { AdminUser } from '@/types/Admin'
 import { toast } from 'sonner'
 import { listUsers, updateUserStatus } from '@/api/services/admin'
@@ -149,10 +149,12 @@ const UsersPageClient = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
-                  <TableHead>Account Type</TableHead>
-                  <TableHead>KYC Level</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>KYC</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Wallet Balance</TableHead>
+                  <TableHead>Wallet</TableHead>
+                  <TableHead>Logins</TableHead>
+                  <TableHead>Last Login</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -160,10 +162,10 @@ const UsersPageClient = () => {
               <TableBody>
                 {isLoading
                   ? Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => <TableCell key={j}><Skeleton className='h-4 w-full' /></TableCell>)}</TableRow>
+                      <TableRow key={i}>{Array.from({ length: 9 }).map((_, j) => <TableCell key={j}><Skeleton className='h-4 w-full' /></TableCell>)}</TableRow>
                     ))
                   : users.length === 0
-                    ? <TableRow><TableCell colSpan={7} className='text-center text-sm text-grey-400 py-12'>No users found.</TableCell></TableRow>
+                    ? <TableRow><TableCell colSpan={9} className='text-center text-sm text-grey-400 py-12'>No users found.</TableCell></TableRow>
                     : users.map((user) => (
                         <TableRow key={user.id}>
                           <TableCell>
@@ -174,6 +176,7 @@ const UsersPageClient = () => {
                               <div>
                                 <p className='text-xs font-medium text-grey-900'>{user.firstName} {user.lastName}</p>
                                 <p className='text-[10px] text-grey-500'>{user.email}</p>
+                                {user.giftseonTag && <p className='text-[10px] text-primary-500'>@{user.giftseonTag}</p>}
                               </div>
                             </div>
                           </TableCell>
@@ -182,7 +185,23 @@ const UsersPageClient = () => {
                           </TableCell>
                           <TableCell>{kycBadge(user.kycLevel)}</TableCell>
                           <TableCell>{statusBadge(user.status)}</TableCell>
-                          <TableCell><span className='text-xs font-medium text-grey-800'>{formatCurrency(user.walletBalance ?? 0)}</span></TableCell>
+                          <TableCell>
+                            <div>
+                              <span className='text-xs font-medium text-grey-800'>{formatCurrency(user.walletBalance)}</span>
+                              <p className='text-[10px] text-grey-400'>{user.walletCurrency}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className='flex items-center gap-1'>
+                              <LogIn className='w-3 h-3 text-grey-400' />
+                              <span className='text-xs text-grey-700'>{formatNumber(user.loginCount)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className='text-[10px] text-grey-500'>
+                              {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}
+                            </span>
+                          </TableCell>
                           <TableCell><span className='text-xs text-grey-500'>{formatDate(user.createdAt)}</span></TableCell>
                           <TableCell>
                             <Button variant='ghost' size='sm' className='h-7 w-7 p-0' onClick={() => handleToggleStatus(user)} disabled={mutation.isPending}>

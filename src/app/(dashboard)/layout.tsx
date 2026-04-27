@@ -14,6 +14,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/kyc': 'KYC Verification',
   '/api-balances': 'API Balances',
   '/refunds': 'Refunds',
+  '/logs': 'Audit Logs',
 }
 
 const DashboardLayout = ({ children }: { children: ReactNode }) => {

@@ -8,6 +8,9 @@ import type {
   AdminKycRequest,
   OverviewStats,
   ChartDataPoint,
+  ApiBalance,
+  SystemLog,
+  TransactionSummary,
 } from '@/types/Admin'
 
 // ── Pagination wrapper ────────────────────────────────────────────────────────
@@ -23,10 +26,19 @@ export interface DashboardOverview {
   totalUsers: number
   newUsersThisMonth: number
   totalTransactions: number
-  transactionVolume: number
+  totalInflow: number
+  totalOutflow: number
+  totalFees: number
+  actionVolume: number
   pendingWithdrawals: number
+  processingWithdrawals: number
+  stallingWithdrawalsCount: number
+  pendingAdminRefundCount: number
   pendingKyc: number
   totalBills: number
+  kycLevel1Count: number
+  kycLevel2Count: number
+  kycLevel3Count: number
   userGrowth: { date: string; value: number }[]
   transactionTrend: { date: string; value: number }[]
 }
@@ -34,6 +46,11 @@ export interface DashboardOverview {
 export const getDashboardOverview = async (): Promise<DashboardOverview> => {
   const resp = await apiService.adminPrivate.get<ApiResponse<DashboardOverview>>('/dashboard/overview')
   return resp.data.data
+}
+
+export const getApiBalances = async (): Promise<ApiBalance[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<ApiBalance[]>>('/dashboard/api-balances')
+  return resp.data.data ?? []
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -47,8 +64,29 @@ export interface ListUsersParams {
 }
 
 export const listUsers = async (params: ListUsersParams = {}): Promise<PaginatedResult<AdminUser>> => {
-  const resp = await apiService.adminPrivate.get<ApiResponse<AdminUser[]>>('/users', { params })
-  return { data: resp.data.data ?? [], meta: (resp.data as any).meta }
+  const resp = await apiService.adminPrivate.get<ApiResponse<any[]>>('/users', { params })
+  const raw: any[] = resp.data.data ?? []
+  const data: AdminUser[] = raw.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    phoneNumber: u.phoneNumber ?? null,
+    accountType: u.accountType,
+    giftseonTag: u.giftseonTag ?? null,
+    kycLevel: u.kycLevel ?? 0,
+    status: u.status,
+    provider: u.provider ?? 'local',
+    profilePicture: u.profilePicture ?? null,
+    pinActivated: !!u.pinActivated,
+    walletBalance: parseFloat(u.walletBalance ?? '0'),
+    walletCurrency: u.walletCurrency ?? 'NGN',
+    loginCount: u.loggedIn ?? 0,
+    lastLoginAt: u.lastLoginAt ?? null,
+    createdAt: u.createdAt,
+    updatedAt: u.updatedAt,
+  }))
+  return { data, meta: (resp.data as any).meta }
 }
 
 export const updateUserStatus = async (userId: string, status: string): Promise<void> => {
@@ -68,9 +106,14 @@ export interface ListTransactionsParams {
   limit?: number
 }
 
-export const listTransactions = async (params: ListTransactionsParams = {}): Promise<PaginatedResult<AdminTransaction>> => {
+export interface TransactionsResponse extends PaginatedResult<AdminTransaction> {
+  summary: TransactionSummary
+}
+
+export const listTransactions = async (params: ListTransactionsParams = {}): Promise<TransactionsResponse> => {
   const resp = await apiService.adminPrivate.get<ApiResponse<any[]>>('/transactions', { params })
   const raw: any[] = resp.data.data ?? []
+  const meta = (resp.data as any).meta ?? {}
   const data: AdminTransaction[] = raw.map((t) => ({
     id: t.id,
     reference: t.reference,
@@ -81,11 +124,18 @@ export const listTransactions = async (params: ListTransactionsParams = {}): Pro
     source: t.source,
     description: t.description ?? '',
     userId: t.userId,
-    userName: t.userId?.slice(0, 8) ?? '—',
-    userEmail: '—',
+    userName: t.userName ?? null,
+    userEmail: t.userEmail ?? null,
+    userTag: t.userTag ?? null,
     createdAt: t.createdAt,
   }))
-  return { data, meta: (resp.data as any).meta }
+  const summary: TransactionSummary = meta.summary ?? {
+    totalInflow: 0,
+    totalOutflow: 0,
+    profitMargin: 0,
+    sourceDistribution: {},
+  }
+  return { data, meta, summary }
 }
 
 // ── Bills ─────────────────────────────────────────────────────────────────────
@@ -110,8 +160,9 @@ export const listBills = async (params: ListBillsParams = {}): Promise<Paginated
     recipient: b.recipient ?? b.recipientPhone ?? b.recipientName ?? '—',
     provider: b.provider ?? '—',
     userId: b.senderId,
-    userName: b.senderId?.slice(0, 8) ?? '—',
-    userEmail: '—',
+    userName: b.senderName ?? null,
+    userEmail: b.senderEmail ?? null,
+    userTag: b.senderTag ?? null,
     createdAt: b.createdAt,
   }))
   return { data, meta: (resp.data as any).meta }
@@ -137,25 +188,39 @@ export interface ListWithdrawalsParams {
   limit?: number
 }
 
-export const listWithdrawals = async (params: ListWithdrawalsParams = {}): Promise<PaginatedResult<AdminWithdrawal>> => {
+export interface WithdrawalsResponse extends PaginatedResult<AdminWithdrawal> {
+  processingVolume: number
+  stallingCount: number
+}
+
+export const listWithdrawals = async (params: ListWithdrawalsParams = {}): Promise<WithdrawalsResponse> => {
   const resp = await apiService.adminPrivate.get<ApiResponse<any[]>>('/withdrawals', { params })
   const raw: any[] = resp.data.data ?? []
+  const meta = (resp.data as any).meta ?? {}
   const data: AdminWithdrawal[] = raw.map((w) => ({
     id: w.id,
     reference: w.reference,
     amount: parseFloat(w.amount),
+    fee: parseFloat(w.fee ?? '0'),
     currency: w.currency,
-    status: mapWithdrawalStatus(w.status),
+    status: w.status as AdminWithdrawal['status'],
     bankName: w.bankName,
     accountNumber: w.accountNumber,
     accountName: w.accountName,
     userId: w.userId,
-    userName: w.accountName ?? w.userId?.slice(0, 8) ?? '—',
-    userEmail: '—',
+    userName: w.userName ?? w.accountName ?? null,
+    userEmail: w.userEmail ?? null,
     kycLevel: w.kycLevelAtRequest ?? 0,
+    isStalling: !!w.isStalling,
     createdAt: w.createdAt,
+    processedAt: w.processedAt ?? null,
   }))
-  return { data, meta: (resp.data as any).meta }
+  return {
+    data,
+    meta,
+    processingVolume: meta.processingVolume ?? 0,
+    stallingCount: meta.stallingCount ?? 0,
+  }
 }
 
 export const approveWithdrawal = async (id: string): Promise<void> => {
@@ -166,11 +231,8 @@ export const rejectWithdrawal = async (id: string, reason: string): Promise<void
   await apiService.adminPrivate.post(`/withdrawals/${id}/reject`, { reason })
 }
 
-function mapWithdrawalStatus(s: string): AdminWithdrawal['status'] {
-  if (s === 'completed') return 'approved'
-  if (s === 'cancelled') return 'rejected'
-  if (s === 'processing') return 'processing'
-  return 'pending'
+export const refundWithdrawal = async (id: string): Promise<void> => {
+  await apiService.adminPrivate.post(`/withdrawals/${id}/refund`)
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────
@@ -189,13 +251,13 @@ export const listKyc = async (params: ListKycParams = {}): Promise<PaginatedResu
   const data: AdminKycRequest[] = raw.map((k) => ({
     id: k.id,
     userId: k.userId,
-    userName: k.user ? `${k.user.firstName} ${k.user.lastName}` : k.userId?.slice(0, 8) ?? '—',
+    userName: k.user ? `${k.user.firstName} ${k.user.lastName}` : '—',
     userEmail: k.user?.email ?? '—',
     documentType: deriveDocumentType(k),
     currentLevel: k.kycLevel ?? 0,
     targetLevel: (k.kycLevel ?? 0) + 1,
     status: k.overallStatus ?? 'not_started',
-    documentUrl: k.ninNumber ? null : (k.utilityBillUrl ?? k.faceVerificationUrl ?? null),
+    documentUrl: k.utilityBillUrl ?? k.faceVerificationUrl ?? null,
     submittedAt: k.updatedAt ?? k.createdAt,
     reviewedAt: k.reviewedAt ?? null,
     reviewNote: deriveReviewNote(k),
@@ -232,6 +294,23 @@ function deriveReviewNote(k: any): string | null {
   )
 }
 
+// ── Logs ──────────────────────────────────────────────────────────────────────
+
+export interface ListLogsParams {
+  action?: string
+  entityType?: string
+  adminId?: string
+  from?: string
+  to?: string
+  page?: number
+  limit?: number
+}
+
+export const listLogs = async (params: ListLogsParams = {}): Promise<PaginatedResult<SystemLog>> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<SystemLog[]>>('/logs', { params })
+  return { data: resp.data.data ?? [], meta: (resp.data as any).meta }
+}
+
 // ── Dashboard helpers ─────────────────────────────────────────────────────────
 
 export function mapOverviewToStats(d: DashboardOverview): OverviewStats {
@@ -244,13 +323,30 @@ export function mapOverviewToStats(d: DashboardOverview): OverviewStats {
     },
     transactions: {
       total: d.totalTransactions,
-      totalVolume: d.transactionVolume,
+      totalVolume: d.totalInflow + d.totalOutflow,
+      totalInflow: d.totalInflow,
+      totalOutflow: d.totalOutflow,
+      totalFees: d.totalFees,
+      actionVolume: d.actionVolume,
       successRate: 0,
-      avgValue: d.totalTransactions > 0 ? d.transactionVolume / d.totalTransactions : 0,
+      avgValue: d.totalTransactions > 0 ? (d.totalInflow + d.totalOutflow) / d.totalTransactions : 0,
     },
     bills: { total: d.totalBills, totalVolume: 0, successRate: 0 },
-    withdrawals: { pending: d.pendingWithdrawals, pendingVolume: 0, processedToday: 0 },
-    kyc: { pending: d.pendingKyc, approvedToday: 0, level1: 0, level2: 0, level3: 0 },
+    withdrawals: {
+      pending: d.pendingWithdrawals,
+      processing: d.processingWithdrawals,
+      stallingCount: d.stallingWithdrawalsCount,
+      pendingAdminRefund: d.pendingAdminRefundCount,
+      pendingVolume: 0,
+      processedToday: 0,
+    },
+    kyc: {
+      pending: d.pendingKyc,
+      approvedToday: 0,
+      level1: d.kycLevel1Count,
+      level2: d.kycLevel2Count,
+      level3: d.kycLevel3Count,
+    },
   }
 }
 

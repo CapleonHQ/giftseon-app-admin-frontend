@@ -21,12 +21,15 @@ export interface AdminUser {
   profilePicture: string | null
   pinActivated: boolean
   walletBalance: number
+  walletCurrency: string
+  loginCount: number
+  lastLoginAt: string | null
   createdAt: string
   updatedAt: string
 }
 
 export type TransactionType = 'credit' | 'debit'
-export type TransactionStatus = 'pending' | 'success' | 'failed' | 'cancelled'
+export type TransactionStatus = 'pending' | 'success' | 'failed' | 'cancelled' | 'reversed'
 export type TransactionSource = 'wallet' | 'bill' | 'general' | 'gift_payment'
 
 export interface AdminTransaction {
@@ -39,8 +42,9 @@ export interface AdminTransaction {
   source: TransactionSource
   description: string
   userId: string
-  userName: string
-  userEmail: string
+  userName: string | null
+  userEmail: string | null
+  userTag: string | null
   createdAt: string
 }
 
@@ -56,27 +60,31 @@ export interface AdminBill {
   recipient: string
   provider: string
   userId: string
-  userName: string
-  userEmail: string
+  userName: string | null
+  userEmail: string | null
+  userTag: string | null
   createdAt: string
 }
 
-export type WithdrawalStatus = 'pending' | 'approved' | 'rejected' | 'processing'
+export type WithdrawalStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 
 export interface AdminWithdrawal {
   id: string
   reference: string
   amount: number
+  fee: number
   currency: string
   status: WithdrawalStatus
   bankName: string
   accountNumber: string
   accountName: string
   userId: string
-  userName: string
-  userEmail: string
+  userName: string | null
+  userEmail: string | null
   kycLevel: number
+  isStalling: boolean
   createdAt: string
+  processedAt: string | null
 }
 
 export type KycDocumentType = 'nin' | 'bvn' | 'utility_bill' | 'face'
@@ -101,25 +109,31 @@ export interface ApiBalance {
   provider: string
   service: string
   balance: number
+  ledgerBalance?: number
   currency: string
   lastChecked: string
-  status: 'healthy' | 'low' | 'critical'
+  status: 'healthy' | 'low' | 'critical' | 'unknown'
   threshold: number
+  error?: string
 }
 
-export interface RefundRequest {
+export interface SystemLog {
   id: string
-  reference: string
-  originalReference: string
-  amount: number
-  reason: string
-  status: 'pending' | 'approved' | 'rejected' | 'processed'
-  userId: string
-  userName: string
-  userEmail: string
-  transactionType: string
+  adminId: string
+  adminEmail: string
+  action: string
+  entityType: string | null
+  entityId: string | null
+  metadata: Record<string, any> | null
+  ipAddress: string | null
   createdAt: string
-  processedAt: string | null
+}
+
+export interface TransactionSummary {
+  totalInflow: number
+  totalOutflow: number
+  profitMargin: number
+  sourceDistribution: Record<string, { count: number; volume: number }>
 }
 
 export interface OverviewStats {
@@ -132,16 +146,19 @@ export interface OverviewStats {
   transactions: {
     total: number
     totalVolume: number
+    totalInflow: number
+    totalOutflow: number
+    totalFees: number
+    actionVolume: number
     successRate: number
     avgValue: number
   }
-  bills: {
-    total: number
-    totalVolume: number
-    successRate: number
-  }
+  bills: { total: number; totalVolume: number; successRate: number }
   withdrawals: {
     pending: number
+    processing: number
+    stallingCount: number
+    pendingAdminRefund: number
     pendingVolume: number
     processedToday: number
   }
@@ -152,6 +169,21 @@ export interface OverviewStats {
     level2: number
     level3: number
   }
+}
+
+export interface RefundRequest {
+  id: string
+  reference: string
+  originalReference: string
+  amount: number
+  reason: string
+  status: 'pending' | 'approved' | 'processed' | 'rejected'
+  userId: string
+  userName: string
+  userEmail: string
+  transactionType: 'bill' | 'gift_payment' | 'wallet'
+  createdAt: string
+  processedAt: string | null
 }
 
 export interface ChartDataPoint {

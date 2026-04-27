@@ -15,6 +15,7 @@ import {
   Wifi,
   RotateCcw,
   LogOut,
+  ScrollText,
 } from 'lucide-react'
 import { logout } from '@/api/auth'
 
@@ -27,6 +28,7 @@ const MENU_ITEMS = [
   { href: '/kyc', label: 'KYC Verification', icon: ShieldCheck },
   { href: '/api-balances', label: 'API Balances', icon: Wifi },
   { href: '/refunds', label: 'Refunds', icon: RotateCcw },
+  { href: '/logs', label: 'Audit Logs', icon: ScrollText },
 ]
 
 const Sidebar = () => {
@@ -48,6 +50,8 @@ const Sidebar = () => {
               className='w-full h-full'
               width={200}
               height={80}
+              priority
+              loading="eager"
             />
           </div>
         </Link>

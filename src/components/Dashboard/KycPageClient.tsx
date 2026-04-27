@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Search, CheckCircle2, XCircle, Clock, ShieldCheck, Eye } from 'lucide-react'
+import { Search, CheckCircle2, XCircle, Clock, ShieldCheck, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,11 +11,10 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MOCK_KYC_REQUESTS, OVERVIEW_STATS } from '@/lib/mock-data'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, formatNumber } from '@/lib/utils'
 import type { AdminKycRequest, KycStatus, KycDocumentType } from '@/types/Admin'
 import { toast } from 'sonner'
-import { listKyc, approveKyc, rejectKyc } from '@/api/services/admin'
+import { listKyc, approveKyc, rejectKyc, getDashboardOverview } from '@/api/services/admin'
 
 const docTypeLabel: Record<KycDocumentType, string> = {
   nin: 'NIN',
@@ -42,23 +41,34 @@ const KycPageClient = () => {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [page, setPage] = useState(1)
   const qc = useQueryClient()
 
   const params = {
     search: debouncedSearch || undefined,
     overallStatus: statusFilter !== 'all' ? statusFilter : undefined,
+    page,
+    limit: 20,
   }
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['kyc', params],
     queryFn: () => listKyc(params),
     retry: 1,
+  })
+
+  const { data: overview } = useQuery({
+    queryKey: ['dashboard-overview'],
+    queryFn: getDashboardOverview,
+    retry: 1,
+    staleTime: 60_000,
   })
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => approveKyc(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kyc'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-overview'] })
       toast.success('KYC approved successfully.')
     },
     onError: () => toast.error('Failed to approve KYC.'),
@@ -68,14 +78,16 @@ const KycPageClient = () => {
     mutationFn: ({ id, reason }: { id: string; reason: string }) => rejectKyc(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['kyc'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-overview'] })
       toast.error('KYC rejected.')
     },
     onError: () => toast.error('Failed to reject KYC.'),
   })
 
-  const kycList: AdminKycRequest[] = isError
-    ? MOCK_KYC_REQUESTS
-    : (data?.data ?? (isLoading ? [] : MOCK_KYC_REQUESTS))
+  const kycList: AdminKycRequest[] = data?.data ?? []
+  const meta = data?.meta
+  const total = meta?.total ?? 0
+  const totalPages = meta?.totalPages ?? 1
 
   const pendingCount = kycList.filter((k) => k.status === 'pending').length
 
@@ -84,18 +96,19 @@ const KycPageClient = () => {
     clearTimeout((window as any).__kycSearchTimer)
     ;(window as any).__kycSearchTimer = setTimeout(() => {
       setDebouncedSearch(val)
+      setPage(1)
     }, 400)
   }
 
   return (
     <div className='flex flex-col gap-6'>
-      {/* Stats */}
+      {/* Stats — sourced from the cached overview query */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
         {[
-          { label: 'Pending Review', value: String(pendingCount || OVERVIEW_STATS.kyc.pending), color: 'text-warning-600', bg: 'bg-warning-50' },
-          { label: 'Approved Today', value: String(OVERVIEW_STATS.kyc.approvedToday), color: 'text-success-600', bg: 'bg-success-50' },
-          { label: 'Level 2 Users', value: String(OVERVIEW_STATS.kyc.level2), color: 'text-information-600', bg: 'bg-information-50' },
-          { label: 'Level 3 Users', value: String(OVERVIEW_STATS.kyc.level3), color: 'text-success-600', bg: 'bg-success-50' },
+          { label: 'Pending Review', value: formatNumber(overview?.pendingKyc ?? pendingCount), color: 'text-warning-600', bg: 'bg-warning-50' },
+          { label: 'Level 1 Users', value: formatNumber(overview?.kycLevel1Count ?? 0), color: 'text-information-600', bg: 'bg-information-50' },
+          { label: 'Level 2 Users', value: formatNumber(overview?.kycLevel2Count ?? 0), color: 'text-warning-600', bg: 'bg-warning-50' },
+          { label: 'Level 3 Users', value: formatNumber(overview?.kycLevel3Count ?? 0), color: 'text-success-600', bg: 'bg-success-50' },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card>
@@ -146,7 +159,7 @@ const KycPageClient = () => {
                 {pendingCount > 0 && (
                   <p className='text-xs text-warning-600 mt-0.5 flex items-center gap-1'>
                     <Clock className='w-3 h-3' />
-                    {pendingCount} pending review
+                    {pendingCount} pending review (this page)
                   </p>
                 )}
               </div>
@@ -160,7 +173,7 @@ const KycPageClient = () => {
                     className='pl-8 h-8 text-xs w-44'
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
+                <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
                   <SelectTrigger className='h-8 text-xs w-32'>
                     <SelectValue placeholder='Status' />
                   </SelectTrigger>
@@ -196,94 +209,98 @@ const KycPageClient = () => {
                         ))}
                       </TableRow>
                     ))
-                  : kycList.map((req) => (
-                      <TableRow key={req.id}>
-                        <TableCell>
-                          <div>
-                            <p className='text-xs font-medium text-grey-800'>{req.userName}</p>
-                            <p className='text-[10px] text-grey-500'>{req.userEmail}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant='information' className='text-[10px]'>{docTypeLabel[req.documentType]}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className='flex items-center gap-1 text-xs'>
-                            <span className={`font-medium ${levelColors[req.currentLevel]}`}>L{req.currentLevel}</span>
-                            <span className='text-grey-400'>→</span>
-                            <span className={`font-semibold ${levelColors[Math.min(req.targetLevel, 3)]}`}>L{Math.min(req.targetLevel, 3)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={statusBadgeVariant(req.status)} className='text-[10px] capitalize'>
-                            {req.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className='text-[10px] text-grey-500'>{formatDateTime(req.submittedAt)}</span>
-                        </TableCell>
-                        <TableCell>
-                          {req.reviewNote ? (
-                            <span className='text-[10px] text-grey-500 italic'>{req.reviewNote}</span>
-                          ) : (
-                            <span className='text-[10px] text-grey-300'>—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className='flex items-center gap-1'>
-                            {req.documentUrl && (
-                              <Button
-                                size='sm'
-                                variant='outline'
-                                className='h-6 w-6 p-0'
-                                title='View document'
-                                onClick={() => window.open(req.documentUrl!, '_blank')}
-                              >
-                                <Eye className='w-3 h-3' />
-                              </Button>
+                  : kycList.length === 0
+                    ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className='text-center text-sm text-grey-400 py-8'>
+                            No KYC submissions match your filters.
+                          </TableCell>
+                        </TableRow>
+                      )
+                    : kycList.map((req) => (
+                        <TableRow key={req.id}>
+                          <TableCell>
+                            <div>
+                              <p className='text-xs font-medium text-grey-800'>{req.userName}</p>
+                              <p className='text-[10px] text-grey-500'>{req.userEmail}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant='information' className='text-[10px]'>{docTypeLabel[req.documentType]}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className='flex items-center gap-1 text-xs'>
+                              <span className={`font-medium ${levelColors[req.currentLevel]}`}>L{req.currentLevel}</span>
+                              <span className='text-grey-400'>→</span>
+                              <span className={`font-semibold ${levelColors[Math.min(req.targetLevel, 3)]}`}>L{Math.min(req.targetLevel, 3)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={statusBadgeVariant(req.status)} className='text-[10px] capitalize'>
+                              {req.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className='text-[10px] text-grey-500'>{formatDateTime(req.submittedAt)}</span>
+                          </TableCell>
+                          <TableCell>
+                            {req.reviewNote ? (
+                              <span className='text-[10px] text-grey-500 italic'>{req.reviewNote}</span>
+                            ) : (
+                              <span className='text-[10px] text-grey-300'>—</span>
                             )}
-                            {req.status === 'pending' && (
-                              <>
+                          </TableCell>
+                          <TableCell>
+                            <div className='flex items-center gap-1'>
+                              {req.documentUrl && (
                                 <Button
                                   size='sm'
-                                  variant='success'
-                                  className='h-6 px-2 text-[10px]'
-                                  disabled={approveMutation.isPending}
-                                  onClick={() => approveMutation.mutate(req.id)}
+                                  variant='outline'
+                                  className='h-6 w-6 p-0'
+                                  title='View document'
+                                  onClick={() => window.open(req.documentUrl!, '_blank')}
                                 >
-                                  <CheckCircle2 className='w-3 h-3 mr-0.5' />
-                                  Approve
+                                  <Eye className='w-3 h-3' />
                                 </Button>
-                                <Button
-                                  size='sm'
-                                  variant='destructive'
-                                  className='h-6 px-2 text-[10px]'
-                                  disabled={rejectMutation.isPending}
-                                  onClick={() => rejectMutation.mutate({ id: req.id, reason: 'Rejected by admin' })}
-                                >
-                                  <XCircle className='w-3 h-3 mr-0.5' />
-                                  Reject
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                {!isLoading && kycList.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className='text-center text-sm text-grey-400 py-8'>
-                      No KYC submissions match your filters.
-                    </TableCell>
-                  </TableRow>
-                )}
+                              )}
+                              {req.status === 'pending' && (
+                                <>
+                                  <Button
+                                    size='sm'
+                                    variant='success'
+                                    className='h-6 px-2 text-[10px]'
+                                    disabled={approveMutation.isPending}
+                                    onClick={() => approveMutation.mutate(req.id)}
+                                  >
+                                    <CheckCircle2 className='w-3 h-3 mr-0.5' />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size='sm'
+                                    variant='destructive'
+                                    className='h-6 px-2 text-[10px]'
+                                    disabled={rejectMutation.isPending}
+                                    onClick={() => rejectMutation.mutate({ id: req.id, reason: 'Rejected by admin' })}
+                                  >
+                                    <XCircle className='w-3 h-3 mr-0.5' />
+                                    Reject
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
               </TableBody>
             </Table>
-            {isError && (
-              <div className='px-4 py-2 border-t border-grey-50'>
-                <span className='text-xs text-grey-400'>Showing demo data</span>
+            <div className='px-4 py-3 border-t border-grey-50 flex items-center justify-between'>
+              <span className='text-xs text-grey-500'>Showing {kycList.length} of {formatNumber(total)} submissions</span>
+              <div className='flex items-center gap-2'>
+                <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className='w-3.5 h-3.5' /></Button>
+                <span className='text-xs text-grey-500'>{page} / {totalPages}</span>
+                <Button variant='outline' size='sm' disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className='w-3.5 h-3.5' /></Button>
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       </motion.div>

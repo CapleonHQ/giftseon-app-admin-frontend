@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  DollarSign,
+  Activity,
+  AlertTriangle,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +38,7 @@ import {
   mapTrendToChartPoints,
   listTransactions,
   listWithdrawals,
+  getApiBalances,
 } from '@/api/services/admin'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
@@ -118,6 +122,7 @@ const OverviewPageClient = () => {
     queryKey: ['dashboard-overview'],
     queryFn: getDashboardOverview,
     retry: 1,
+    refetchInterval: 60_000,
   })
 
   const { data: txnResult } = useQuery({
@@ -130,6 +135,20 @@ const OverviewPageClient = () => {
     queryKey: ['withdrawals-pending'],
     queryFn: () => listWithdrawals({ status: 'pending', limit: 5 }),
     retry: 1,
+  })
+
+  const { data: stallingWd } = useQuery({
+    queryKey: ['withdrawals-stalling'],
+    queryFn: () => listWithdrawals({ status: 'processing', limit: 10 }),
+    retry: 1,
+    refetchInterval: 30_000,
+  })
+
+  const { data: apiBalances } = useQuery({
+    queryKey: ['api-balances'],
+    queryFn: getApiBalances,
+    retry: 1,
+    refetchInterval: 30_000,
   })
 
   if (isLoading) {
@@ -158,6 +177,7 @@ const OverviewPageClient = () => {
   const s = mapOverviewToStats(overview)
   const recentTxns = txnResult?.data ?? []
   const pendingWds = wdResult?.data ?? []
+  const stallingList = (stallingWd?.data ?? []).filter((w) => w.isStalling)
 
   const userChartPoints = mapTrendToChartPoints(overview.userGrowth)
   const txnChartPoints = mapTrendToChartPoints(overview.transactionTrend)
@@ -190,27 +210,77 @@ const OverviewPageClient = () => {
     }],
   }
 
+  const profitMargin = s.transactions.actionVolume > 0
+    ? ((s.transactions.totalFees / s.transactions.actionVolume) * 100).toFixed(2)
+    : '0.00'
+
   return (
     <div className='flex flex-col gap-6'>
-      {/* Summary stats */}
+      {/* Stalling withdrawals alert */}
+      {stallingList.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className='border-warning-200 bg-warning-50'>
+            <CardContent className='p-4 flex items-start gap-3'>
+              <AlertTriangle className='w-5 h-5 text-warning-600 shrink-0 mt-0.5' />
+              <div>
+                <p className='text-sm font-semibold text-warning-800'>
+                  {stallingList.length} withdrawal{stallingList.length > 1 ? 's' : ''} stalling in processing state
+                </p>
+                <p className='text-xs text-warning-700 mt-0.5'>
+                  These have been in PROCESSING for more than 5 minutes. Visit the Withdrawals page to review and refund.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Pending admin refund alert */}
+      {s.withdrawals.pendingAdminRefund > 0 && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className='border-error-200 bg-error-50'>
+            <CardContent className='p-4 flex items-start gap-3'>
+              <AlertCircle className='w-5 h-5 text-error-600 shrink-0 mt-0.5' />
+              <div>
+                <p className='text-sm font-semibold text-error-800'>
+                  {s.withdrawals.pendingAdminRefund} failed withdrawal{s.withdrawals.pendingAdminRefund > 1 ? 's' : ''} need manual refund
+                </p>
+                <p className='text-xs text-error-700 mt-0.5'>
+                  Provider payout failed. Funds are held pending admin review.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Primary stats */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
         <StatCard title='Total Users' value={formatNumber(s.users.total)} subtitle={`${formatNumber(s.users.newThisMonth)} new this month`} icon={Users} color='primary' delay={0} />
-        <StatCard title='Transaction Volume' value={`₦${(s.transactions.totalVolume / 1_000_000).toFixed(1)}M`} subtitle={`${s.transactions.total.toLocaleString()} total`} icon={ArrowLeftRight} color='success' delay={0.05} />
+        <StatCard title='Action Volume' value={formatCurrency(s.transactions.actionVolume)} subtitle={`${formatCurrency(s.transactions.totalFees)} fees collected`} icon={Activity} color='success' delay={0.05} />
         <StatCard title='Bills Processed' value={formatNumber(s.bills.total)} icon={Zap} color='information' delay={0.1} />
         <StatCard title='Pending Withdrawals' value={formatNumber(s.withdrawals.pending)} icon={ArrowDownToLine} color='warning' delay={0.15} />
       </div>
 
       {/* Secondary stats */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-        <StatCard title='New Users (Month)' value={formatNumber(s.users.newThisMonth)} icon={Users} color='primary' delay={0.2} />
-        <StatCard title='KYC Pending' value={formatNumber(s.kyc.pending)} icon={ShieldCheck} color='warning' delay={0.25} />
-        <StatCard title='Total Transactions' value={formatNumber(s.transactions.total)} icon={ArrowLeftRight} color='information' delay={0.3} />
-        <StatCard title='Total Bills' value={formatNumber(s.bills.total)} icon={Zap} color='success' delay={0.35} />
+        <StatCard title='Total Inflow' value={formatCurrency(s.transactions.totalInflow)} icon={ArrowLeftRight} color='success' delay={0.2} />
+        <StatCard title='Total Outflow' value={formatCurrency(s.transactions.totalOutflow)} icon={ArrowLeftRight} color='error' delay={0.25} />
+        <StatCard title='Profit Margin' value={`${profitMargin}%`} subtitle={`${formatCurrency(s.transactions.totalFees)} fees`} icon={DollarSign} color='primary' delay={0.3} />
+        <StatCard title='KYC Pending' value={formatNumber(s.kyc.pending)} icon={ShieldCheck} color='warning' delay={0.35} />
+      </div>
+
+      {/* Tertiary stats */}
+      <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
+        <StatCard title='Processing Withdrawals' value={formatNumber(s.withdrawals.processing)} subtitle={s.withdrawals.stallingCount > 0 ? `${s.withdrawals.stallingCount} stalling` : undefined} icon={ArrowDownToLine} color={s.withdrawals.stallingCount > 0 ? 'warning' : 'information'} delay={0.4} />
+        <StatCard title='KYC Level 1' value={formatNumber(s.kyc.level1)} icon={ShieldCheck} color='information' delay={0.45} />
+        <StatCard title='KYC Level 2' value={formatNumber(s.kyc.level2)} icon={ShieldCheck} color='warning' delay={0.5} />
+        <StatCard title='KYC Level 3' value={formatNumber(s.kyc.level3)} icon={ShieldCheck} color='success' delay={0.55} />
       </div>
 
       {/* Charts row */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
           <Card>
             <CardHeader className='pb-2'>
               <CardTitle className='text-sm'>User Growth</CardTitle>
@@ -224,7 +294,7 @@ const OverviewPageClient = () => {
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
           <Card>
             <CardHeader className='pb-2'>
               <CardTitle className='text-sm'>Transaction Volume</CardTitle>
@@ -239,9 +309,36 @@ const OverviewPageClient = () => {
         </motion.div>
       </div>
 
+      {/* API Balances */}
+      {apiBalances && apiBalances.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+          <Card>
+            <CardHeader className='pb-2'>
+              <CardTitle className='text-sm'>Provider Balances</CardTitle>
+              <p className='text-xs text-grey-500'>Auto-refreshes every 30s</p>
+            </CardHeader>
+            <CardContent className='pt-0'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                {apiBalances.map((bal) => (
+                  <div key={`${bal.provider}-${bal.service}`} className='flex items-center justify-between p-3 rounded-lg bg-grey-50 border border-grey-100'>
+                    <div>
+                      <p className='text-xs font-medium text-grey-800'>{bal.provider} — {bal.service}</p>
+                      <p className='text-base font-semibold text-grey-900 mt-0.5'>{formatCurrency(bal.balance)}</p>
+                    </div>
+                    <Badge variant={bal.status === 'healthy' ? 'success' : bal.status === 'unknown' ? 'grey' : 'error'} className='text-[10px]'>
+                      {bal.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       {/* Recent transactions + withdrawals */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
           <Card>
             <CardHeader><CardTitle className='text-sm'>Recent Transactions</CardTitle></CardHeader>
             <CardContent className='pt-0'>
@@ -267,7 +364,7 @@ const OverviewPageClient = () => {
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
           <Card>
             <CardHeader><CardTitle className='text-sm'>Pending Withdrawals</CardTitle></CardHeader>
             <CardContent className='pt-0'>
@@ -297,7 +394,7 @@ const OverviewPageClient = () => {
 
       {/* KYC pending banner */}
       {s.kyc.pending > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
           <Card>
             <CardContent className='p-4 flex items-center gap-3'>
               <div className='w-8 h-8 rounded-lg bg-warning-50 flex items-center justify-center'>
