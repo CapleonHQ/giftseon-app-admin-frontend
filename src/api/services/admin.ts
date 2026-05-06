@@ -11,6 +11,7 @@ import type {
   ApiBalance,
   SystemLog,
   TransactionSummary,
+  AdminWallet,
 } from '@/types/Admin'
 
 // ── Pagination wrapper ────────────────────────────────────────────────────────
@@ -91,6 +92,62 @@ export const listUsers = async (params: ListUsersParams = {}): Promise<Paginated
 
 export const updateUserStatus = async (userId: string, status: string): Promise<void> => {
   await apiService.adminPrivate.patch(`/users/${userId}/status`, { status })
+}
+
+export const getUserWithWallet = async (userId: string): Promise<{ user: AdminUser; wallet: AdminWallet | null }> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<any>>(`/users/${userId}`)
+  const raw = resp.data.data
+  const u = raw.user
+  const w = raw.wallet
+
+  const user: AdminUser = {
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    phoneNumber: u.phoneNumber ?? null,
+    accountType: u.accountType,
+    giftseonTag: u.giftseonTag ?? null,
+    kycLevel: u.kycLevel ?? 0,
+    status: u.status,
+    provider: u.provider ?? 'local',
+    profilePicture: u.profilePicture ?? null,
+    pinActivated: !!u.pinActivated,
+    walletBalance: parseFloat(w?.balance ?? '0'),
+    walletCurrency: w?.currency ?? 'NGN',
+    loginCount: u.loggedIn ?? 0,
+    lastLoginAt: u.lastLoginAt ?? null,
+    createdAt: u.createdAt,
+    updatedAt: u.updatedAt,
+  }
+
+  const wallet: AdminWallet | null = w
+    ? {
+        id: w.id,
+        userId: w.userId,
+        balance: parseFloat(w.balance ?? '0'),
+        topupBalance: parseFloat(w.topupBalance ?? '0'),
+        receivedBalance: parseFloat(w.receivedBalance ?? '0'),
+        withdrawableBalance: parseFloat(w.receivedBalance ?? '0'),
+        totalReceived: parseFloat(w.totalReceived ?? '0'),
+        totalWithdrawn: parseFloat(w.totalWithdrawn ?? '0'),
+        currency: w.currency ?? 'NGN',
+        isLocked: !!w.isLocked,
+        walletNote: w.walletNote ?? null,
+        createdAt: w.createdAt,
+        updatedAt: w.updatedAt,
+      }
+    : null
+
+  return { user, wallet }
+}
+
+export const lockUserWallet = async (userId: string): Promise<void> => {
+  await apiService.adminPrivate.patch(`/users/${userId}/wallet/lock`)
+}
+
+export const unlockUserWallet = async (userId: string): Promise<void> => {
+  await apiService.adminPrivate.patch(`/users/${userId}/wallet/unlock`)
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────────

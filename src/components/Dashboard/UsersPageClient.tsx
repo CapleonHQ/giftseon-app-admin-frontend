@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Search, Filter, UserCheck, UserX, Users, ChevronLeft, ChevronRight, LogIn } from 'lucide-react'
+import { Search, Filter, UserCheck, UserX, Users, ChevronLeft, ChevronRight, LogIn, Wallet } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { formatCurrency, formatDate, formatDateTime, formatNumber, getInitials } from '@/lib/utils'
 import type { AdminUser } from '@/types/Admin'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import { listUsers, updateUserStatus } from '@/api/services/admin'
 
 const kycBadge = (level: number) => {
@@ -204,11 +205,18 @@ const UsersPageClient = () => {
                           </TableCell>
                           <TableCell><span className='text-xs text-grey-500'>{formatDate(user.createdAt)}</span></TableCell>
                           <TableCell>
-                            <Button variant='ghost' size='sm' className='h-7 w-7 p-0' onClick={() => handleToggleStatus(user)} disabled={mutation.isPending}>
-                              {user.status === 'active'
-                                ? <UserX className='w-3.5 h-3.5 text-error-500' />
-                                : <UserCheck className='w-3.5 h-3.5 text-success-500' />}
-                            </Button>
+                            <div className='flex items-center gap-1'>
+                              <Link href={`/users/${user.id}/wallet`}>
+                                <Button variant='ghost' size='sm' className='h-7 w-7 p-0' title='View Wallet'>
+                                  <Wallet className='w-3.5 h-3.5 text-information-500' />
+                                </Button>
+                              </Link>
+                              <Button variant='ghost' size='sm' className='h-7 w-7 p-0' onClick={() => handleToggleStatus(user)} disabled={mutation.isPending}>
+                                {user.status === 'active'
+                                  ? <UserX className='w-3.5 h-3.5 text-error-500' />
+                                  : <UserCheck className='w-3.5 h-3.5 text-success-500' />}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

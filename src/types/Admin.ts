@@ -190,3 +190,19 @@ export interface ChartDataPoint {
   label: string
   value: number
 }
+
+export interface AdminWallet {
+  id: string
+  userId: string
+  balance: number
+  topupBalance: number
+  receivedBalance: number
+  withdrawableBalance: number
+  totalReceived: number
+  totalWithdrawn: number
+  currency: string
+  isLocked: boolean
+  walletNote: string | null
+  createdAt: string
+  updatedAt: string
+}
