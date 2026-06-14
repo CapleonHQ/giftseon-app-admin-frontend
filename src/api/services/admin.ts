@@ -12,6 +12,9 @@ import type {
   SystemLog,
   TransactionSummary,
   AdminWallet,
+  FxMetrics,
+  AdminRecommendation,
+  AdminOccasion,
 } from '@/types/Admin'
 
 // ── Pagination wrapper ────────────────────────────────────────────────────────
@@ -31,6 +34,9 @@ export interface DashboardOverview {
   totalOutflow: number
   totalFees: number
   actionVolume: number
+  fxTransactionCount: number
+  fxPlatformProfit: number
+  fxConversionVolume: number
   pendingWithdrawals: number
   processingWithdrawals: number
   stallingWithdrawalsCount: number
@@ -52,6 +58,11 @@ export const getDashboardOverview = async (): Promise<DashboardOverview> => {
 export const getApiBalances = async (): Promise<ApiBalance[]> => {
   const resp = await apiService.adminPrivate.get<ApiResponse<ApiBalance[]>>('/dashboard/api-balances')
   return resp.data.data ?? []
+}
+
+export const getFxMetrics = async (): Promise<FxMetrics> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<FxMetrics>>('/dashboard/fx')
+  return resp.data.data
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -368,6 +379,129 @@ export const listLogs = async (params: ListLogsParams = {}): Promise<PaginatedRe
   return { data: resp.data.data ?? [], meta: (resp.data as any).meta }
 }
 
+// ── Recommendations ───────────────────────────────────────────────────────────
+
+export interface CreateRecommendationPayload {
+  title: string
+  description: string
+  category?: string
+  currency?: string
+  minPrice?: number
+  maxPrice?: number
+  occasionTags?: string[]
+  recipientTags?: string[]
+  imageUrl?: string
+  externalLink?: string
+  isCashGift?: boolean
+  priority?: number
+}
+
+export interface OccasionPayload {
+  slug: string
+  label: string
+  description?: string
+  iconName?: string
+}
+
+function mapRecommendation(r: any): AdminRecommendation {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    occasionTags: r.occasionTags ?? [],
+    recipientTags: r.recipientTags ?? [],
+    category: r.category ?? null,
+    minPrice: r.minPrice != null ? parseFloat(r.minPrice) : null,
+    maxPrice: r.maxPrice != null ? parseFloat(r.maxPrice) : null,
+    currency: r.currency ?? 'NGN',
+    imageUrl: r.imageUrl ?? null,
+    externalLink: r.externalLink ?? null,
+    isCashGift: !!r.isCashGift,
+    isActive: !!r.isActive,
+    priority: r.priority ?? 0,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }
+}
+
+function mapOccasion(o: any): AdminOccasion {
+  return {
+    id: o.id,
+    slug: o.slug,
+    label: o.label,
+    description: o.description ?? null,
+    iconName: o.iconName ?? null,
+    isActive: !!o.isActive,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt,
+  }
+}
+
+export interface RecommendationMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+export const listRecommendations = async (params: { page?: number; limit?: number } = {}): Promise<{ data: AdminRecommendation[]; meta: RecommendationMeta }> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<any>>('/recommendations', { params })
+  const raw = resp.data.data ?? {}
+  return {
+    data: (raw.recommendations ?? []).map(mapRecommendation),
+    meta: raw.pagination ?? { page: 1, limit: 20, total: 0, totalPages: 1 },
+  }
+}
+
+export const createRecommendation = async (dto: CreateRecommendationPayload): Promise<AdminRecommendation> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<any>>('/recommendations', dto)
+  return mapRecommendation(resp.data.data)
+}
+
+export const updateRecommendation = async (id: string, dto: Partial<CreateRecommendationPayload>): Promise<AdminRecommendation> => {
+  const resp = await apiService.adminPrivate.patch<ApiResponse<any>>(`/recommendations/${id}`, dto)
+  return mapRecommendation(resp.data.data)
+}
+
+export const deleteRecommendation = async (id: string): Promise<void> => {
+  await apiService.adminPrivate.delete(`/recommendations/${id}`)
+}
+
+export const restoreRecommendation = async (id: string): Promise<AdminRecommendation> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<any>>(`/recommendations/${id}/restore`)
+  return mapRecommendation(resp.data.data)
+}
+
+export const bulkImportRecommendations = async (recommendations: CreateRecommendationPayload[]): Promise<{ count: number; message: string }> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<any>>('/recommendations/bulk', { recommendations })
+  return resp.data.data
+}
+
+export const listOccasions = async (): Promise<AdminOccasion[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<any[]>>('/occasions')
+  return (resp.data.data ?? []).map(mapOccasion)
+}
+
+export const createOccasion = async (dto: OccasionPayload): Promise<AdminOccasion> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<any>>('/occasions', dto)
+  return mapOccasion(resp.data.data)
+}
+
+export const updateOccasion = async (id: string, dto: Partial<OccasionPayload>): Promise<AdminOccasion> => {
+  const resp = await apiService.adminPrivate.patch<ApiResponse<any>>(`/occasions/${id}`, dto)
+  return mapOccasion(resp.data.data)
+}
+
+export const deleteOccasion = async (id: string): Promise<void> => {
+  await apiService.adminPrivate.delete(`/occasions/${id}`)
+}
+
+export const bulkImportOccasions = async (occasions: OccasionPayload[]): Promise<{ count: number; message: string }> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<any>>('/occasions/bulk', { occasions })
+  return resp.data.data
+}
+
 // ── Dashboard helpers ─────────────────────────────────────────────────────────
 
 export function mapOverviewToStats(d: DashboardOverview): OverviewStats {
@@ -403,6 +537,11 @@ export function mapOverviewToStats(d: DashboardOverview): OverviewStats {
       level1: d.kycLevel1Count,
       level2: d.kycLevel2Count,
       level3: d.kycLevel3Count,
+    },
+    fx: {
+      transactionCount: d.fxTransactionCount ?? 0,
+      platformProfit: d.fxPlatformProfit ?? 0,
+      conversionVolume: d.fxConversionVolume ?? 0,
     },
   }
 }
