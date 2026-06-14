@@ -12,6 +12,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/bills': 'Bills',
   '/withdrawals': 'Withdrawal Requests',
   '/kyc': 'KYC Verification',
+  '/fx': 'FX Metrics',
   '/api-balances': 'API Balances',
   '/refunds': 'Refunds',
   '/logs': 'Audit Logs',

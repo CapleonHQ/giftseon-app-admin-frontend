@@ -30,7 +30,7 @@ export interface AdminUser {
 
 export type TransactionType = 'credit' | 'debit'
 export type TransactionStatus = 'pending' | 'success' | 'failed' | 'cancelled' | 'reversed'
-export type TransactionSource = 'wallet' | 'bill' | 'general' | 'gift_payment'
+export type TransactionSource = 'wallet' | 'bill' | 'general' | 'gift_payment' | 'wallet_transfer'
 
 export interface AdminTransaction {
   id: string
@@ -169,6 +169,11 @@ export interface OverviewStats {
     level2: number
     level3: number
   }
+  fx: {
+    transactionCount: number
+    platformProfit: number
+    conversionVolume: number
+  }
 }
 
 export interface RefundRequest {
@@ -189,6 +194,71 @@ export interface RefundRequest {
 export interface ChartDataPoint {
   label: string
   value: number
+}
+
+export interface FxCurrencyPair {
+  fromCurrency: string
+  toCurrency: string
+  platformProfit: number
+  volume: number
+  transactionCount: number
+}
+
+export interface FxSourceBreakdown {
+  source: string
+  platformProfit: number
+  volume: number
+  transactionCount: number
+}
+
+export interface FxDailyTrend {
+  date: string
+  profit: number
+  volume: number
+  transactionCount: number
+}
+
+export interface FxMetrics {
+  summary: {
+    totalFxTransactions: number
+    totalPlatformProfit: number
+    totalConversionVolume: number
+    totalFeeCollected: number
+  }
+  profitByCurrencyPair: FxCurrencyPair[]
+  volumeBySource: FxSourceBreakdown[]
+  dailyFxTrend: FxDailyTrend[]
+}
+
+export interface AdminRecommendation {
+  id: string
+  title: string
+  description: string
+  occasionTags: string[]
+  recipientTags: string[]
+  category: string | null
+  minPrice: number | null
+  maxPrice: number | null
+  currency: string
+  imageUrl: string | null
+  externalLink: string | null
+  isCashGift: boolean
+  isActive: boolean
+  priority: number
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminOccasion {
+  id: string
+  slug: string
+  label: string
+  description: string | null
+  iconName: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AdminWallet {

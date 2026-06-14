@@ -47,6 +47,11 @@ export const OVERVIEW_STATS: OverviewStats = {
     level2: 6_940,
     level3: 2_110,
   },
+  fx: {
+    transactionCount: 0,
+    platformProfit: 0,
+    conversionVolume: 0,
+  },
 }
 
 export const USERS_CHART: ChartDataPoint[] = [

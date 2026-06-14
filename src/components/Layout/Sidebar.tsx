@@ -16,6 +16,8 @@ import {
   RotateCcw,
   LogOut,
   ScrollText,
+  Globe,
+  Sparkles,
 } from 'lucide-react'
 import { logout } from '@/api/auth'
 
@@ -26,8 +28,10 @@ const MENU_ITEMS = [
   { href: '/bills', label: 'Bills', icon: Zap },
   { href: '/withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
   { href: '/kyc', label: 'KYC Verification', icon: ShieldCheck },
+  { href: '/fx', label: 'FX Metrics', icon: Globe },
   { href: '/api-balances', label: 'API Balances', icon: Wifi },
   { href: '/refunds', label: 'Refunds', icon: RotateCcw },
+  { href: '/recommendations', label: 'Recommendations', icon: Sparkles },
   { href: '/logs', label: 'Audit Logs', icon: ScrollText },
 ]
 

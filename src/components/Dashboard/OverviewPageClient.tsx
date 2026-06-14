@@ -16,6 +16,7 @@ import {
   DollarSign,
   Activity,
   AlertTriangle,
+  Globe,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -278,9 +279,16 @@ const OverviewPageClient = () => {
         <StatCard title='KYC Level 3' value={formatNumber(s.kyc.level3)} icon={ShieldCheck} color='success' delay={0.55} />
       </div>
 
+      {/* FX / Conversion stats */}
+      <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
+        <StatCard title='FX Transactions' value={formatNumber(s.fx.transactionCount)} subtitle='Cross-currency conversions' icon={Globe} color='information' delay={0.6} />
+        <StatCard title='FX Platform Profit' value={formatCurrency(s.fx.platformProfit)} subtitle='Earned from conversion spread' icon={DollarSign} color='success' delay={0.65} />
+        <StatCard title='FX Conversion Volume' value={formatCurrency(s.fx.conversionVolume)} subtitle='Total source-currency volume' icon={Activity} color='primary' delay={0.7} />
+      </div>
+
       {/* Charts row */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
           <Card>
             <CardHeader className='pb-2'>
               <CardTitle className='text-sm'>User Growth</CardTitle>
@@ -294,7 +302,7 @@ const OverviewPageClient = () => {
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
           <Card>
             <CardHeader className='pb-2'>
               <CardTitle className='text-sm'>Transaction Volume</CardTitle>
@@ -311,7 +319,7 @@ const OverviewPageClient = () => {
 
       {/* API Balances */}
       {apiBalances && apiBalances.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
           <Card>
             <CardHeader className='pb-2'>
               <CardTitle className='text-sm'>Provider Balances</CardTitle>
@@ -338,7 +346,7 @@ const OverviewPageClient = () => {
 
       {/* Recent transactions + withdrawals */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }}>
           <Card>
             <CardHeader><CardTitle className='text-sm'>Recent Transactions</CardTitle></CardHeader>
             <CardContent className='pt-0'>
@@ -364,7 +372,7 @@ const OverviewPageClient = () => {
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.95 }}>
           <Card>
             <CardHeader><CardTitle className='text-sm'>Pending Withdrawals</CardTitle></CardHeader>
             <CardContent className='pt-0'>
@@ -394,7 +402,7 @@ const OverviewPageClient = () => {
 
       {/* KYC pending banner */}
       {s.kyc.pending > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.0 }}>
           <Card>
             <CardContent className='p-4 flex items-center gap-3'>
               <div className='w-8 h-8 rounded-lg bg-warning-50 flex items-center justify-center'>
