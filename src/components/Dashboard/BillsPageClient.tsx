@@ -16,14 +16,11 @@ import type { AdminBill, BillType } from '@/types/Admin'
 import { Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import {
-  listBills,
-  getBillsBreakdown,
-  triggerBillsSync,
-  listDataNetworks,
-  listNetworkPlans,
-  toggleDataNetwork,
-  type DataNetwork,
-  type DataPlan,
+  listBills, getBillsBreakdown, triggerBillsSync,
+  listDataNetworks, listNetworkPlans, toggleDataNetwork,
+  listAirtimeNetworks, listCableProviders, listCablePackages, listElectricityDiscos,
+  type DataNetwork, type DataPlan, type FullSyncResult,
+  type AirtimeNetwork, type CableProvider, type CablePackage, type ElectricityDisco,
 } from '@/api/services/admin'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
@@ -53,115 +50,93 @@ const BILL_TYPE_KEYS: BillType[] = ['airtime', 'data', 'cable_tv', 'electricity'
 const LIMIT = 20
 const PLAN_LIMIT = 50
 
-// ─── Networks tab ─────────────────────────────────────────────────────────────
+type CatalogueCategory = 'data' | 'airtime' | 'cable' | 'electricity'
 
-const NetworksTab = ({ onSync, syncPending, syncMessage }: {
-  onSync: () => void
-  syncPending: boolean
-  syncMessage: string | null
-}) => {
+const CATALOGUE_TABS: { key: CatalogueCategory; label: string; icon: React.ReactNode }[] = [
+  { key: 'data', label: 'Data', icon: <Wifi className='w-3.5 h-3.5' /> },
+  { key: 'airtime', label: 'Airtime', icon: <Zap className='w-3.5 h-3.5' /> },
+  { key: 'cable', label: 'Cable TV', icon: <Tv className='w-3.5 h-3.5' /> },
+  { key: 'electricity', label: 'Electricity', icon: <Battery className='w-3.5 h-3.5' /> },
+]
+
+// ─── Skeleton row helper ──────────────────────────────────────────────────────
+
+const SkeletonRows = ({ cols, rows = 4 }: { cols: number; rows?: number }) => (
+  <>
+    {Array.from({ length: rows }).map((_, i) => (
+      <TableRow key={i}>
+        {Array.from({ length: cols }).map((_, j) => (
+          <TableCell key={j}><Skeleton className='h-4 w-full' /></TableCell>
+        ))}
+      </TableRow>
+    ))}
+  </>
+)
+
+// ─── Data plans panel ─────────────────────────────────────────────────────────
+
+const DataPlansPanel = () => {
   const queryClient = useQueryClient()
-  const [selectedNetwork, setSelectedNetwork] = useState<DataNetwork | null>(null)
+  const [selected, setSelected] = useState<DataNetwork | null>(null)
   const [planSearch, setPlanSearch] = useState('')
-  const [debouncedPlanSearch, setDebouncedPlanSearch] = useState('')
-  const [planTypeFilter, setPlanTypeFilter] = useState('all')
-  const [planStatusFilter, setPlanStatusFilter] = useState('all')
-  const [planPage, setPlanPage] = useState(1)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [page, setPage] = useState(1)
 
-  const { data: networks, isLoading: networksLoading } = useQuery({
-    queryKey: ['data-networks'],
-    queryFn: listDataNetworks,
-    retry: 1,
-  })
+  const { data: networks, isLoading } = useQuery({ queryKey: ['data-networks'], queryFn: listDataNetworks, retry: 1 })
 
   const planParams = {
-    search: debouncedPlanSearch || undefined,
-    planType: planTypeFilter !== 'all' ? planTypeFilter : undefined,
-    isActive: planStatusFilter === 'all' ? undefined : planStatusFilter === 'active',
-    page: planPage,
+    search: debouncedSearch || undefined,
+    planType: typeFilter !== 'all' ? typeFilter : undefined,
+    isActive: statusFilter === 'all' ? undefined : statusFilter === 'active',
+    page,
     limit: PLAN_LIMIT,
   }
-
   const { data: plansData, isLoading: plansLoading } = useQuery({
-    queryKey: ['network-plans', selectedNetwork?.code, planParams],
-    queryFn: () => listNetworkPlans(selectedNetwork!.code, planParams),
-    enabled: !!selectedNetwork,
+    queryKey: ['network-plans', selected?.code, planParams],
+    queryFn: () => listNetworkPlans(selected!.code, planParams),
+    enabled: !!selected,
     placeholderData: (prev) => prev,
     retry: 1,
   })
 
   const toggleMutation = useMutation({
-    mutationFn: ({ code, isActive }: { code: string; isActive: boolean }) =>
-      toggleDataNetwork(code, isActive),
+    mutationFn: ({ code, isActive }: { code: string; isActive: boolean }) => toggleDataNetwork(code, isActive),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['data-networks'] }),
   })
 
-  const handlePlanSearchChange = (val: string) => {
-    setPlanSearch(val)
-    clearTimeout((window as any).__planSearchTimer)
-    ;(window as any).__planSearchTimer = setTimeout(() => {
-      setDebouncedPlanSearch(val)
-      setPlanPage(1)
-    }, 400)
-  }
-
   const plans: DataPlan[] = plansData?.data ?? []
-  const planMeta = plansData?.meta
-  const totalPlans = planMeta?.total ?? 0
-  const totalPlanPages = planMeta?.totalPages ?? 1
+  const meta = plansData?.meta
+
+  const handleSearch = (val: string) => {
+    setPlanSearch(val)
+    clearTimeout((window as any).__planSearch)
+    ;(window as any).__planSearch = setTimeout(() => { setDebouncedSearch(val); setPage(1) }, 400)
+  }
 
   return (
     <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
-      {/* Network list */}
       <Card>
-        <CardHeader>
-          <div className='flex items-center justify-between'>
-            <CardTitle className='text-sm'>Data Networks</CardTitle>
-            <Button size='sm' variant='outline' className='h-7 text-xs gap-1.5' disabled={syncPending} onClick={onSync}>
-              <RefreshCw className={`w-3 h-3 ${syncPending ? 'animate-spin' : ''}`} />
-              {syncPending ? 'Syncing…' : 'Sync'}
-            </Button>
-          </div>
-          {syncMessage && <p className='text-[10px] text-grey-500 mt-1'>{syncMessage}</p>}
-        </CardHeader>
         <CardContent className='pt-0 px-0'>
-          {networksLoading
+          {isLoading
             ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className='px-4 py-3 border-b border-grey-50 last:border-0'>
-                  <Skeleton className='h-4 w-32 mb-1' />
-                  <Skeleton className='h-3 w-20' />
-                </div>
+                <div key={i} className='px-4 py-3 border-b border-grey-50'><Skeleton className='h-4 w-32 mb-1' /><Skeleton className='h-3 w-20' /></div>
               ))
-            : (networks ?? []).map((network) => (
-                <button
-                  key={network.id}
-                  onClick={() => { setSelectedNetwork(network); setPlanPage(1); setPlanSearch(''); setDebouncedPlanSearch('') }}
-                  className={`w-full px-4 py-3 border-b border-grey-50 last:border-0 text-left transition-colors hover:bg-grey-50 ${selectedNetwork?.id === network.id ? 'bg-primary-50' : ''}`}
+            : (networks ?? []).map((n) => (
+                <button key={n.id} onClick={() => { setSelected(n); setPage(1); setPlanSearch(''); setDebouncedSearch('') }}
+                  className={`w-full px-4 py-3 border-b border-grey-50 last:border-0 text-left hover:bg-grey-50 transition-colors ${selected?.id === n.id ? 'bg-primary-50' : ''}`}
                 >
                   <div className='flex items-center justify-between'>
                     <div>
-                      <p className='text-xs font-medium text-grey-800'>{network.displayName}</p>
-                      <p className='text-[10px] text-grey-500 mt-0.5'>
-                        <span className='font-mono'>{network.code}</span>
-                        {' · '}
-                        <span>{network.activePlans}/{network.totalPlans} plans</span>
-                      </p>
-                      {network.lastSyncedAt && (
-                        <p className='text-[10px] text-grey-400 mt-0.5'>Synced {formatDateTime(network.lastSyncedAt)}</p>
-                      )}
+                      <p className='text-xs font-medium text-grey-800'>{n.displayName}</p>
+                      <p className='text-[10px] text-grey-500 mt-0.5 font-mono'>{n.code} · {n.activePlans}/{n.totalPlans} plans</p>
+                      {n.lastSyncedAt && <p className='text-[10px] text-grey-400'>{formatDateTime(n.lastSyncedAt)}</p>}
                     </div>
                     <div className='flex flex-col items-end gap-1'>
-                      <Badge variant={network.isActive ? 'success' : 'grey'} className='text-[10px]'>
-                        {network.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ code: network.code, isActive: !network.isActive }) }}
-                        className='text-grey-400 hover:text-grey-700 transition-colors'
-                        title={network.isActive ? 'Deactivate' : 'Activate'}
-                      >
-                        {network.isActive
-                          ? <ToggleRight className='w-4 h-4 text-success-500' />
-                          : <ToggleLeft className='w-4 h-4' />}
+                      <Badge variant={n.isActive ? 'success' : 'grey'} className='text-[10px]'>{n.isActive ? 'Active' : 'Off'}</Badge>
+                      <button onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ code: n.code, isActive: !n.isActive }) }}>
+                        {n.isActive ? <ToggleRight className='w-4 h-4 text-success-500' /> : <ToggleLeft className='w-4 h-4 text-grey-400' />}
                       </button>
                     </div>
                   </div>
@@ -170,107 +145,251 @@ const NetworksTab = ({ onSync, syncPending, syncMessage }: {
         </CardContent>
       </Card>
 
-      {/* Plans table */}
       <div className='lg:col-span-2'>
-        {!selectedNetwork ? (
-          <Card className='h-full flex items-center justify-center'>
-            <CardContent className='flex flex-col items-center gap-3 py-16 text-center'>
-              <Database className='w-8 h-8 text-grey-300' />
-              <p className='text-sm text-grey-400'>Select a network to view its data plans</p>
-            </CardContent>
-          </Card>
+        {!selected ? (
+          <Card className='h-full'><CardContent className='flex flex-col items-center gap-3 py-16'><Database className='w-8 h-8 text-grey-300' /><p className='text-sm text-grey-400'>Select a network</p></CardContent></Card>
         ) : (
           <Card>
             <CardHeader>
               <div className='flex flex-col sm:flex-row sm:items-center gap-3 justify-between'>
-                <div>
-                  <CardTitle className='text-sm'>{selectedNetwork.displayName} Plans</CardTitle>
-                  <p className='text-[10px] text-grey-400 mt-0.5'>{formatNumber(totalPlans)} plan(s)</p>
-                </div>
-                <div className='flex flex-wrap items-center gap-2'>
-                  <div className='relative'>
-                    <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-grey-400' />
-                    <Input placeholder='Search…' value={planSearch} onChange={(e) => handlePlanSearchChange(e.target.value)} className='pl-8 h-8 text-xs w-36' />
-                  </div>
-                  <Select value={planTypeFilter} onValueChange={(v) => { setPlanTypeFilter(v); setPlanPage(1) }}>
+                <div><CardTitle className='text-sm'>{selected.displayName} Plans</CardTitle><p className='text-[10px] text-grey-400'>{formatNumber(meta?.total ?? 0)} plans</p></div>
+                <div className='flex flex-wrap gap-2'>
+                  <div className='relative'><Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-grey-400' /><Input value={planSearch} onChange={(e) => handleSearch(e.target.value)} placeholder='Search…' className='pl-8 h-8 text-xs w-36' /></div>
+                  <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1) }}>
                     <SelectTrigger className='h-8 text-xs w-28'><SelectValue placeholder='Type' /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value='all'>All Types</SelectItem>
-                      <SelectItem value='daily'>Daily</SelectItem>
-                      <SelectItem value='weekly'>Weekly</SelectItem>
-                      <SelectItem value='monthly'>Monthly</SelectItem>
-                      <SelectItem value='night'>Night</SelectItem>
-                      <SelectItem value='social'>Social</SelectItem>
-                      <SelectItem value='long-term'>Long-term</SelectItem>
+                      {['all', 'daily', 'weekly', 'monthly', 'night', 'social', 'long-term'].map((v) => (
+                        <SelectItem key={v} value={v}>{v === 'all' ? 'All Types' : v.charAt(0).toUpperCase() + v.slice(1)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <Select value={planStatusFilter} onValueChange={(v) => { setPlanStatusFilter(v); setPlanPage(1) }}>
+                  <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
                     <SelectTrigger className='h-8 text-xs w-24'><SelectValue placeholder='Status' /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value='all'>All</SelectItem>
-                      <SelectItem value='active'>Active</SelectItem>
-                      <SelectItem value='inactive'>Inactive</SelectItem>
-                    </SelectContent>
+                    <SelectContent><SelectItem value='all'>All</SelectItem><SelectItem value='active'>Active</SelectItem><SelectItem value='inactive'>Inactive</SelectItem></SelectContent>
                   </Select>
                 </div>
               </div>
             </CardHeader>
             <CardContent className='pt-0 px-0'>
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Validity</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Cost</TableHead>
-                    <TableHead>Sell Price</TableHead>
-                    <TableHead>Margin</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
+                <TableHeader><TableRow><TableHead>Label</TableHead><TableHead>Data</TableHead><TableHead>Validity</TableHead><TableHead>Type</TableHead><TableHead>Cost</TableHead><TableHead>Sell</TableHead><TableHead>Margin</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {plansLoading
-                    ? Array.from({ length: 6 }).map((_, i) => (
-                        <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => <TableCell key={j}><Skeleton className='h-4 w-full' /></TableCell>)}</TableRow>
-                      ))
-                    : plans.length === 0
-                      ? <TableRow><TableCell colSpan={8} className='text-center text-sm text-grey-400 py-12'>No plans found.</TableCell></TableRow>
-                      : plans.map((plan) => (
-                          <TableRow key={plan.id}>
-                            <TableCell>
-                              <div>
-                                <p className='text-xs font-medium text-grey-800'>{plan.label}</p>
-                                <p className='text-[10px] text-grey-400 font-mono'>{plan.providerCode}</p>
-                              </div>
-                            </TableCell>
-                            <TableCell><span className='text-xs text-grey-700'>{plan.dataMb >= 1024 ? `${(plan.dataMb / 1024).toFixed(1)}GB` : `${plan.dataMb}MB`}</span></TableCell>
-                            <TableCell><span className='text-xs text-grey-700'>{plan.validityDays}d</span></TableCell>
-                            <TableCell><Badge variant='grey' className='text-[10px] capitalize'>{plan.planType}</Badge></TableCell>
-                            <TableCell><span className='text-xs text-grey-700'>{formatCurrency(plan.costNaira)}</span></TableCell>
-                            <TableCell><span className='text-xs font-semibold text-grey-800'>{formatCurrency(plan.sellPriceNaira)}</span></TableCell>
-                            <TableCell>
-                              <span className={`text-xs font-medium ${plan.marginKobo > 0 ? 'text-success-600' : 'text-error-600'}`}>
-                                {formatCurrency(plan.marginKobo / 100)}
-                              </span>
-                            </TableCell>
-                            <TableCell><Badge variant={plan.isActive ? 'success' : 'grey'} className='text-[10px]'>{plan.isActive ? 'Active' : 'Off'}</Badge></TableCell>
-                          </TableRow>
-                        ))}
+                  {plansLoading ? <SkeletonRows cols={8} /> : plans.length === 0
+                    ? <TableRow><TableCell colSpan={8} className='text-center text-sm text-grey-400 py-10'>No plans found.</TableCell></TableRow>
+                    : plans.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell><div><p className='text-xs font-medium text-grey-800'>{p.label}</p><p className='text-[10px] font-mono text-grey-400'>{p.providerCode}</p></div></TableCell>
+                          <TableCell><span className='text-xs'>{p.dataMb >= 1024 ? `${(p.dataMb / 1024).toFixed(1)}GB` : `${p.dataMb}MB`}</span></TableCell>
+                          <TableCell><span className='text-xs'>{p.validityDays}d</span></TableCell>
+                          <TableCell><Badge variant='grey' className='text-[10px] capitalize'>{p.planType}</Badge></TableCell>
+                          <TableCell><span className='text-xs'>{formatCurrency(p.costNaira)}</span></TableCell>
+                          <TableCell><span className='text-xs font-semibold'>{formatCurrency(p.sellPriceNaira)}</span></TableCell>
+                          <TableCell><span className={`text-xs font-medium ${p.marginKobo > 0 ? 'text-success-600' : 'text-error-600'}`}>{formatCurrency(p.marginKobo / 100)}</span></TableCell>
+                          <TableCell><Badge variant={p.isActive ? 'success' : 'grey'} className='text-[10px]'>{p.isActive ? 'Active' : 'Off'}</Badge></TableCell>
+                        </TableRow>
+                      ))}
                 </TableBody>
               </Table>
               <div className='px-4 py-3 border-t border-grey-50 flex items-center justify-between'>
-                <span className='text-xs text-grey-500'>Showing {plans.length} of {formatNumber(totalPlans)}</span>
+                <span className='text-xs text-grey-500'>Showing {plans.length} of {formatNumber(meta?.total ?? 0)}</span>
                 <div className='flex items-center gap-2'>
-                  <Button variant='outline' size='sm' disabled={planPage <= 1} onClick={() => setPlanPage((p) => p - 1)}><ChevronLeft className='w-3.5 h-3.5' /></Button>
-                  <span className='text-xs text-grey-500'>{planPage} / {totalPlanPages}</span>
-                  <Button variant='outline' size='sm' disabled={planPage >= totalPlanPages} onClick={() => setPlanPage((p) => p + 1)}><ChevronRight className='w-3.5 h-3.5' /></Button>
+                  <Button variant='outline' size='sm' disabled={(meta?.page ?? 1) <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className='w-3.5 h-3.5' /></Button>
+                  <span className='text-xs text-grey-500'>{meta?.page ?? 1} / {meta?.totalPages ?? 1}</span>
+                  <Button variant='outline' size='sm' disabled={(meta?.page ?? 1) >= (meta?.totalPages ?? 1)} onClick={() => setPage((p) => p + 1)}><ChevronRight className='w-3.5 h-3.5' /></Button>
                 </div>
               </div>
             </CardContent>
           </Card>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Airtime networks panel ───────────────────────────────────────────────────
+
+const AirtimePanel = () => {
+  const { data: networks, isLoading } = useQuery({ queryKey: ['airtime-networks'], queryFn: listAirtimeNetworks, retry: 1 })
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className='text-sm'>Airtime Networks</CardTitle></CardHeader>
+      <CardContent className='pt-0 px-0'>
+        <Table>
+          <TableHeader><TableRow><TableHead>Network</TableHead><TableHead>Code</TableHead><TableHead>Status</TableHead><TableHead>Added</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {isLoading ? <SkeletonRows cols={4} /> : (networks ?? []).length === 0
+              ? <TableRow><TableCell colSpan={4} className='text-center text-sm text-grey-400 py-10'>No airtime networks synced yet.</TableCell></TableRow>
+              : (networks ?? []).map((n: AirtimeNetwork) => (
+                  <TableRow key={n.id}>
+                    <TableCell><span className='text-xs font-medium text-grey-800'>{n.displayName}</span></TableCell>
+                    <TableCell><span className='text-xs font-mono text-grey-600'>{n.code}</span></TableCell>
+                    <TableCell><Badge variant={n.isActive ? 'success' : 'grey'} className='text-[10px]'>{n.isActive ? 'Active' : 'Inactive'}</Badge></TableCell>
+                    <TableCell><span className='text-[10px] text-grey-500'>{formatDateTime(n.createdAt)}</span></TableCell>
+                  </TableRow>
+                ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Cable TV panel ───────────────────────────────────────────────────────────
+
+const CablePanel = () => {
+  const [selectedProvider, setSelectedProvider] = useState<CableProvider | null>(null)
+  const [page, setPage] = useState(1)
+
+  const { data: providers, isLoading: providersLoading } = useQuery({ queryKey: ['cable-providers'], queryFn: listCableProviders, retry: 1 })
+  const { data: packagesData, isLoading: packagesLoading } = useQuery({
+    queryKey: ['cable-packages', selectedProvider?.code, page],
+    queryFn: () => listCablePackages(selectedProvider!.code, { page, limit: PLAN_LIMIT }),
+    enabled: !!selectedProvider,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  })
+
+  const packages: CablePackage[] = packagesData?.data ?? []
+  const meta = packagesData?.meta
+
+  return (
+    <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
+      <Card>
+        <CardHeader><CardTitle className='text-sm'>Cable Providers</CardTitle></CardHeader>
+        <CardContent className='pt-0 px-0'>
+          {providersLoading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className='px-4 py-3 border-b border-grey-50'><Skeleton className='h-4 w-28 mb-1' /><Skeleton className='h-3 w-16' /></div>
+              ))
+            : (providers ?? []).map((p) => (
+                <button key={p.id} onClick={() => { setSelectedProvider(p); setPage(1) }}
+                  className={`w-full px-4 py-3 border-b border-grey-50 last:border-0 text-left hover:bg-grey-50 transition-colors ${selectedProvider?.id === p.id ? 'bg-primary-50' : ''}`}
+                >
+                  <div className='flex items-center justify-between'>
+                    <div>
+                      <p className='text-xs font-medium text-grey-800'>{p.displayName}</p>
+                      <p className='text-[10px] text-grey-500 font-mono mt-0.5'>{p.code} · {p.totalPackages} packages</p>
+                    </div>
+                    <Badge variant={p.isActive ? 'success' : 'grey'} className='text-[10px]'>{p.isActive ? 'Active' : 'Off'}</Badge>
+                  </div>
+                </button>
+              ))}
+        </CardContent>
+      </Card>
+
+      <div className='lg:col-span-2'>
+        {!selectedProvider ? (
+          <Card className='h-full'><CardContent className='flex flex-col items-center gap-3 py-16'><Database className='w-8 h-8 text-grey-300' /><p className='text-sm text-grey-400'>Select a provider</p></CardContent></Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className='text-sm'>{selectedProvider.displayName} Packages</CardTitle>
+              <p className='text-[10px] text-grey-400'>{formatNumber(meta?.total ?? 0)} packages</p>
+            </CardHeader>
+            <CardContent className='pt-0 px-0'>
+              <Table>
+                <TableHeader><TableRow><TableHead>Package</TableHead><TableHead>Plan Code</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Last Synced</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {packagesLoading ? <SkeletonRows cols={5} /> : packages.length === 0
+                    ? <TableRow><TableCell colSpan={5} className='text-center text-sm text-grey-400 py-10'>No packages found.</TableCell></TableRow>
+                    : packages.map((pkg) => (
+                        <TableRow key={pkg.id}>
+                          <TableCell><div><p className='text-xs font-medium text-grey-800'>{pkg.display}</p><p className='text-[10px] text-grey-500'>{pkg.description}</p></div></TableCell>
+                          <TableCell><span className='text-xs font-mono text-grey-600'>{pkg.planCode}</span></TableCell>
+                          <TableCell><span className='text-xs font-semibold'>{formatCurrency(pkg.amount)}</span></TableCell>
+                          <TableCell><Badge variant={pkg.isActive ? 'success' : 'grey'} className='text-[10px]'>{pkg.isActive ? 'Active' : 'Off'}</Badge></TableCell>
+                          <TableCell><span className='text-[10px] text-grey-500'>{formatDateTime(pkg.lastSyncedAt)}</span></TableCell>
+                        </TableRow>
+                      ))}
+                </TableBody>
+              </Table>
+              <div className='px-4 py-3 border-t border-grey-50 flex items-center justify-between'>
+                <span className='text-xs text-grey-500'>Showing {packages.length} of {formatNumber(meta?.total ?? 0)}</span>
+                <div className='flex items-center gap-2'>
+                  <Button variant='outline' size='sm' disabled={(meta?.page ?? 1) <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className='w-3.5 h-3.5' /></Button>
+                  <span className='text-xs text-grey-500'>{meta?.page ?? 1} / {meta?.totalPages ?? 1}</span>
+                  <Button variant='outline' size='sm' disabled={(meta?.page ?? 1) >= (meta?.totalPages ?? 1)} onClick={() => setPage((p) => p + 1)}><ChevronRight className='w-3.5 h-3.5' /></Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Electricity panel ────────────────────────────────────────────────────────
+
+const ElectricityPanel = () => {
+  const { data: discos, isLoading } = useQuery({ queryKey: ['electricity-discos'], queryFn: listElectricityDiscos, retry: 1 })
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className='text-sm'>Electricity DISCOs</CardTitle></CardHeader>
+      <CardContent className='pt-0 px-0'>
+        <Table>
+          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Plan Code</TableHead><TableHead>Min</TableHead><TableHead>Max</TableHead><TableHead>Status</TableHead><TableHead>Last Synced</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {isLoading ? <SkeletonRows cols={6} /> : (discos ?? []).length === 0
+              ? <TableRow><TableCell colSpan={6} className='text-center text-sm text-grey-400 py-10'>No discos synced yet.</TableCell></TableRow>
+              : (discos ?? []).map((d: ElectricityDisco) => (
+                  <TableRow key={d.id}>
+                    <TableCell><span className='text-xs font-medium text-grey-800'>{d.displayName}</span></TableCell>
+                    <TableCell><span className='text-xs font-mono text-grey-600'>{d.planCode}</span></TableCell>
+                    <TableCell><span className='text-xs'>{formatCurrency(d.minAmount)}</span></TableCell>
+                    <TableCell><span className='text-xs'>{formatCurrency(d.maxAmount)}</span></TableCell>
+                    <TableCell><Badge variant={d.isActive ? 'success' : 'grey'} className='text-[10px]'>{d.isActive ? 'Active' : 'Inactive'}</Badge></TableCell>
+                    <TableCell><span className='text-[10px] text-grey-500'>{formatDateTime(d.lastSyncedAt)}</span></TableCell>
+                  </TableRow>
+                ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Networks tab (category switcher) ────────────────────────────────────────
+
+const NetworksTab = ({ onSync, syncPending, syncMessage }: {
+  onSync: () => void
+  syncPending: boolean
+  syncMessage: string | null
+}) => {
+  const [category, setCategory] = useState<CatalogueCategory>('data')
+
+  return (
+    <div className='flex flex-col gap-4'>
+      {/* Category pills + sync button */}
+      <div className='flex items-center justify-between flex-wrap gap-3'>
+        <div className='flex gap-1 bg-grey-50 rounded-lg p-1'>
+          {CATALOGUE_TABS.map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setCategory(key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                category === key ? 'bg-white shadow-sm text-grey-900' : 'text-grey-500 hover:text-grey-700'
+              }`}
+            >
+              {icon}{label}
+            </button>
+          ))}
+        </div>
+        <div className='flex items-center gap-3'>
+          {syncMessage && <span className='text-[10px] text-grey-500'>{syncMessage}</span>}
+          <Button size='sm' variant='outline' className='h-8 text-xs gap-1.5' disabled={syncPending} onClick={onSync}>
+            <RefreshCw className={`w-3.5 h-3.5 ${syncPending ? 'animate-spin' : ''}`} />
+            {syncPending ? 'Syncing…' : 'Sync All'}
+          </Button>
+        </div>
+      </div>
+
+      {category === 'data' && <DataPlansPanel />}
+      {category === 'airtime' && <AirtimePanel />}
+      {category === 'cable' && <CablePanel />}
+      {category === 'electricity' && <ElectricityPanel />}
     </div>
   )
 }
@@ -289,11 +408,18 @@ const BillsPageClient = () => {
 
   const syncMutation = useMutation({
     mutationFn: triggerBillsSync,
-    onSuccess: (results) => {
-      const total = results.reduce((acc, r) => acc + r.created + r.updated, 0)
-      setSyncMessage(`Sync complete — ${results.length} network(s), ${total} plan(s) created/updated`)
+    onSuccess: (results: FullSyncResult) => {
+      const dataTotal = results.data?.reduce((acc, r) => acc + r.created + r.updated, 0) ?? 0
+      const airTotal = results.airtime?.upserted ?? 0
+      const cableTotal = (results.cable?.upserted ?? 0) + (results.cable?.packagesUpserted ?? 0)
+      const elTotal = results.electricity?.upserted ?? 0
+      setSyncMessage(`Sync complete — ${dataTotal} data plan(s), ${airTotal} airtime, ${cableTotal} cable, ${elTotal} disco(s) updated`)
       void queryClient.invalidateQueries({ queryKey: ['data-networks'] })
       void queryClient.invalidateQueries({ queryKey: ['network-plans'] })
+      void queryClient.invalidateQueries({ queryKey: ['airtime-networks'] })
+      void queryClient.invalidateQueries({ queryKey: ['cable-providers'] })
+      void queryClient.invalidateQueries({ queryKey: ['cable-packages'] })
+      void queryClient.invalidateQueries({ queryKey: ['electricity-discos'] })
       setTimeout(() => setSyncMessage(null), 5000)
     },
     onError: () => setSyncMessage('Sync failed — check server logs'),
@@ -347,10 +473,10 @@ const BillsPageClient = () => {
       {/* Summary stats */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
         {[
-          { label: 'Total Bills', value: formatNumber(total), color: 'text-primary-600', bg: 'bg-primary-50' },
-          { label: 'Total Volume', value: formatCurrency(totalVolume || totalBreakdownVolume), color: 'text-success-600', bg: 'bg-success-50' },
-          { label: 'Airtime', value: formatCurrency(breakdown?.airtime?.volume ?? 0), color: 'text-warning-600', bg: 'bg-warning-50' },
-          { label: 'Electricity', value: formatCurrency(breakdown?.electricity?.volume ?? 0), color: 'text-information-600', bg: 'bg-information-50' },
+          { label: 'Total Bills', value: formatNumber(total), color: 'text-primary-600' },
+          { label: 'Total Volume', value: formatCurrency(totalVolume || totalBreakdownVolume), color: 'text-success-600' },
+          { label: 'Airtime', value: formatCurrency(breakdown?.airtime?.volume ?? 0), color: 'text-warning-600' },
+          { label: 'Electricity', value: formatCurrency(breakdown?.electricity?.volume ?? 0), color: 'text-information-600' },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card><CardContent className='p-4'><p className='text-xs text-grey-500 mb-1'>{s.label}</p><p className={`text-lg font-semibold ${s.color}`}>{s.value}</p></CardContent></Card>
@@ -358,36 +484,29 @@ const BillsPageClient = () => {
         ))}
       </div>
 
-      {/* Tab selector */}
+      {/* Page tabs */}
       <div className='flex gap-1 border-b border-grey-100'>
         {(['transactions', 'networks'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
+          <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
               tab === t ? 'border-primary-600 text-primary-600' : 'border-transparent text-grey-500 hover:text-grey-800'
             }`}
           >
-            {t === 'networks' ? 'Data Networks' : 'Transactions'}
+            {t === 'networks' ? 'Provider Catalogue' : 'Transactions'}
           </button>
         ))}
       </div>
 
       {tab === 'transactions' && (
         <div className='grid grid-cols-1 lg:grid-cols-3 gap-4'>
-          {/* Doughnut chart */}
+          {/* Doughnut */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
             <Card className='h-full'>
-              <CardHeader>
-                <CardTitle className='text-sm'>Bills by Type</CardTitle>
-                <p className='text-xs text-grey-500'>Distribution breakdown</p>
-              </CardHeader>
+              <CardHeader><CardTitle className='text-sm'>Bills by Type</CardTitle><p className='text-xs text-grey-500'>Distribution breakdown</p></CardHeader>
               <CardContent className='flex flex-col items-center gap-4'>
                 {totalBillCount > 0 ? (
                   <>
-                    <div className='w-40 h-40'>
-                      <Doughnut data={doughnutData} options={{ plugins: { legend: { display: false } }, cutout: '70%' }} />
-                    </div>
+                    <div className='w-40 h-40'><Doughnut data={doughnutData} options={{ plugins: { legend: { display: false } }, cutout: '70%' }} /></div>
                     <div className='w-full flex flex-col gap-1.5'>
                       {BILL_TYPE_KEYS.map((key, i) => (
                         <div key={key} className='flex items-center justify-between'>
@@ -397,9 +516,7 @@ const BillsPageClient = () => {
                           </div>
                           <div className='flex items-center gap-2'>
                             <span className='text-[10px] text-grey-400'>{formatCurrency(doughnutVolumes[i])}</span>
-                            <span className='text-xs font-medium text-grey-800'>
-                              {Math.round((doughnutValues[i] / totalBillCount) * 100)}%
-                            </span>
+                            <span className='text-xs font-medium text-grey-800'>{Math.round((doughnutValues[i] / totalBillCount) * 100)}%</span>
                           </div>
                         </div>
                       ))}
@@ -412,17 +529,14 @@ const BillsPageClient = () => {
             </Card>
           </motion.div>
 
-          {/* Transactions table */}
+          {/* Bills table */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className='lg:col-span-2'>
             <Card>
               <CardHeader>
                 <div className='flex flex-col sm:flex-row sm:items-center gap-3 justify-between'>
                   <CardTitle className='text-sm'>Bills</CardTitle>
                   <div className='flex flex-wrap items-center gap-2'>
-                    <div className='relative'>
-                      <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-grey-400' />
-                      <Input placeholder='Search...' value={search} onChange={(e) => handleSearchChange(e.target.value)} className='pl-8 h-8 text-xs w-40' />
-                    </div>
+                    <div className='relative'><Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-grey-400' /><Input placeholder='Search...' value={search} onChange={(e) => handleSearchChange(e.target.value)} className='pl-8 h-8 text-xs w-40' /></div>
                     <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1) }}>
                       <SelectTrigger className='h-8 text-xs w-28'><SelectValue placeholder='Type' /></SelectTrigger>
                       <SelectContent>
@@ -447,40 +561,17 @@ const BillsPageClient = () => {
               </CardHeader>
               <CardContent className='pt-0 px-0'>
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                  <TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Type</TableHead><TableHead>User</TableHead><TableHead>Provider</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {isLoading
-                      ? Array.from({ length: 5 }).map((_, i) => (
-                          <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => <TableCell key={j}><Skeleton className='h-4 w-full' /></TableCell>)}</TableRow>
-                        ))
+                      ? <SkeletonRows cols={7} rows={5} />
                       : bills.length === 0
                         ? <TableRow><TableCell colSpan={7} className='text-center text-sm text-grey-400 py-12'>No bills found.</TableCell></TableRow>
                         : bills.map((bill) => (
                             <TableRow key={bill.id}>
                               <TableCell><span className='text-xs font-mono text-grey-700'>{bill.reference}</span></TableCell>
-                              <TableCell>
-                                <div className='flex items-center gap-1'>
-                                  {billTypeIcon[bill.type]}
-                                  <span className='text-xs text-grey-700'>{billTypeLabel[bill.type] ?? bill.type}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div>
-                                  <p className='text-xs font-medium text-grey-800'>{bill.userName ?? '—'}</p>
-                                  {bill.userEmail && <p className='text-[10px] text-grey-500'>{bill.userEmail}</p>}
-                                  {bill.userTag && <p className='text-[10px] text-primary-500'>@{bill.userTag}</p>}
-                                </div>
-                              </TableCell>
+                              <TableCell><div className='flex items-center gap-1'>{billTypeIcon[bill.type]}<span className='text-xs text-grey-700'>{billTypeLabel[bill.type] ?? bill.type}</span></div></TableCell>
+                              <TableCell><div><p className='text-xs font-medium text-grey-800'>{bill.userName ?? '—'}</p>{bill.userEmail && <p className='text-[10px] text-grey-500'>{bill.userEmail}</p>}{bill.userTag && <p className='text-[10px] text-primary-500'>@{bill.userTag}</p>}</div></TableCell>
                               <TableCell><Badge variant='grey' className='text-[10px]'>{bill.provider}</Badge></TableCell>
                               <TableCell><span className='text-xs font-semibold text-grey-800'>{formatCurrency(bill.amount)}</span></TableCell>
                               <TableCell><Badge variant={statusBadgeVariant(bill.status) as any} className='text-[10px] capitalize'>{bill.status}</Badge></TableCell>

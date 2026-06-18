@@ -248,9 +248,22 @@ export interface BillSyncResult {
   unchanged: number
 }
 
-export const triggerBillsSync = async (): Promise<BillSyncResult[]> => {
-  const resp = await apiService.adminPrivate.post<ApiResponse<BillSyncResult[]>>('/bills/sync')
-  return resp.data.data ?? []
+export interface BillCatalogueSyncResult {
+  category: 'airtime' | 'cable' | 'electricity'
+  upserted: number
+  packagesUpserted?: number
+}
+
+export interface FullSyncResult {
+  data: BillSyncResult[]
+  airtime: BillCatalogueSyncResult
+  cable: BillCatalogueSyncResult
+  electricity: BillCatalogueSyncResult
+}
+
+export const triggerBillsSync = async (): Promise<FullSyncResult> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<FullSyncResult>>('/bills/sync')
+  return resp.data.data
 }
 
 export interface DataNetwork {
@@ -314,6 +327,79 @@ export const listNetworkPlans = async (
 export const toggleDataNetwork = async (networkCode: string, isActive: boolean): Promise<DataNetwork> => {
   const resp = await apiService.adminPrivate.patch<ApiResponse<DataNetwork>>(`/bills/networks/${networkCode}`, { isActive })
   return resp.data.data
+}
+
+// ── Airtime networks ──────────────────────────────────────────────────────────
+
+export interface AirtimeNetwork {
+  id: string
+  code: string
+  displayName: string
+  isActive: boolean
+  createdAt: string
+}
+
+export const listAirtimeNetworks = async (): Promise<AirtimeNetwork[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<AirtimeNetwork[]>>('/bills/airtime-networks')
+  return resp.data.data ?? []
+}
+
+// ── Cable providers + packages ────────────────────────────────────────────────
+
+export interface CableProvider {
+  id: string
+  code: string
+  displayName: string
+  isActive: boolean
+  totalPackages: number
+  createdAt: string
+}
+
+export interface CablePackage {
+  id: string
+  providerId: string
+  planCode: string
+  display: string
+  description: string
+  amount: number
+  isActive: boolean
+  lastSyncedAt: string
+  createdAt: string
+}
+
+export const listCableProviders = async (): Promise<CableProvider[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<CableProvider[]>>('/bills/cable-providers')
+  return resp.data.data ?? []
+}
+
+export const listCablePackages = async (
+  providerCode: string,
+  params: { page?: number; limit?: number } = {},
+): Promise<PaginatedResult<CablePackage>> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<CablePackage[]>>(
+    `/bills/cable-providers/${providerCode}/packages`,
+    { params },
+  )
+  return { data: resp.data.data ?? [], meta: (resp.data as any).meta }
+}
+
+// ── Electricity discos ────────────────────────────────────────────────────────
+
+export interface ElectricityDisco {
+  id: string
+  planId: string
+  planCode: string
+  displayName: string
+  minAmount: number
+  maxAmount: number
+  isActive: boolean
+  lastSyncedAt: string
+  createdAt: string
+}
+
+export const listElectricityDiscos = async (): Promise<ElectricityDisco[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<ElectricityDisco[]>>('/bills/electricity-discos')
+  return resp.data.data ?? []
 }
 
 function mapBillStatus(s: string): 'pending' | 'success' | 'failed' {
