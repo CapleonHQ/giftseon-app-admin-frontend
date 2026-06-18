@@ -253,6 +253,69 @@ export const triggerBillsSync = async (): Promise<BillSyncResult[]> => {
   return resp.data.data ?? []
 }
 
+export interface DataNetwork {
+  id: string
+  code: string
+  displayName: string
+  isActive: boolean
+  totalPlans: number
+  activePlans: number
+  lastSyncedAt: string | null
+}
+
+export interface DataPlan {
+  id: string
+  internalCode: string
+  providerCode: string
+  label: string
+  dataMb: number
+  validityDays: number
+  planType: string
+  isNightPlan: boolean
+  isSocialOnly: boolean
+  isShareable: boolean
+  costKobo: number
+  sellPriceKobo: number
+  giftFeeKobo: number
+  marginKobo: number
+  costNaira: number
+  sellPriceNaira: number
+  giftFeeNaira: number
+  hasDupeWarning: boolean
+  isActive: boolean
+  lastSyncedAt: string
+  createdAt: string
+}
+
+export interface ListNetworkPlansParams {
+  search?: string
+  planType?: string
+  isActive?: boolean
+  page?: number
+  limit?: number
+}
+
+export const listDataNetworks = async (): Promise<DataNetwork[]> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<DataNetwork[]>>('/bills/networks')
+  return resp.data.data ?? []
+}
+
+export const listNetworkPlans = async (
+  networkCode: string,
+  params: ListNetworkPlansParams = {},
+): Promise<PaginatedResult<DataPlan>> => {
+  const resp = await apiService.adminPrivate.get<ApiResponse<DataPlan[]>>(
+    `/bills/networks/${networkCode}/plans`,
+    { params },
+  )
+  return { data: resp.data.data ?? [], meta: (resp.data as any).meta }
+}
+
+export const toggleDataNetwork = async (networkCode: string, isActive: boolean): Promise<DataNetwork> => {
+  const resp = await apiService.adminPrivate.patch<ApiResponse<DataNetwork>>(`/bills/networks/${networkCode}`, { isActive })
+  return resp.data.data
+}
+
 function mapBillStatus(s: string): 'pending' | 'success' | 'failed' {
   if (s === 'processed') return 'success'
   if (s === 'failed' || s === 'cancelled' || s === 'expired') return 'failed'
