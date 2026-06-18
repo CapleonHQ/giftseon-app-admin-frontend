@@ -241,6 +241,18 @@ export const getBillsBreakdown = async (): Promise<Record<string, { count: numbe
   return resp.data.data
 }
 
+export interface BillSyncResult {
+  networkCode: string
+  created: number
+  updated: number
+  unchanged: number
+}
+
+export const triggerBillsSync = async (): Promise<BillSyncResult[]> => {
+  const resp = await apiService.adminPrivate.post<ApiResponse<BillSyncResult[]>>('/bills/sync')
+  return resp.data.data ?? []
+}
+
 function mapBillStatus(s: string): 'pending' | 'success' | 'failed' {
   if (s === 'processed') return 'success'
   if (s === 'failed' || s === 'cancelled' || s === 'expired') return 'failed'

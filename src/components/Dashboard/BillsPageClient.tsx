@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Search, Zap, Wifi, Tv, Battery, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Zap, Wifi, Tv, Battery, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import { formatCurrency, formatDateTime, formatNumber } from '@/lib/utils'
 import type { AdminBill, BillType } from '@/types/Admin'
 import { Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
-import { listBills, getBillsBreakdown } from '@/api/services/admin'
+import { listBills, getBillsBreakdown, triggerBillsSync } from '@/api/services/admin'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -44,11 +44,25 @@ const BILL_TYPE_KEYS: BillType[] = ['airtime', 'data', 'cable_tv', 'electricity'
 const LIMIT = 20
 
 const BillsPageClient = () => {
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+
+  const syncMutation = useMutation({
+    mutationFn: triggerBillsSync,
+    onSuccess: (results) => {
+      const total = results.reduce((acc, r) => acc + r.created + r.updated, 0)
+      setSyncMessage(`Sync complete — ${results.length} network(s), ${total} plan(s) created/updated`)
+      void queryClient.invalidateQueries({ queryKey: ['bills'] })
+      void queryClient.invalidateQueries({ queryKey: ['bills-breakdown'] })
+      setTimeout(() => setSyncMessage(null), 5000)
+    },
+    onError: () => setSyncMessage('Sync failed — check server logs'),
+  })
 
   const params = {
     search: debouncedSearch || undefined,
@@ -152,7 +166,22 @@ const BillsPageClient = () => {
           <Card>
             <CardHeader>
               <div className='flex flex-col sm:flex-row sm:items-center gap-3 justify-between'>
-                <CardTitle className='text-sm'>Bills</CardTitle>
+                <div className='flex items-center gap-3'>
+                  <CardTitle className='text-sm'>Bills</CardTitle>
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    className='h-7 text-xs gap-1.5'
+                    disabled={syncMutation.isPending}
+                    onClick={() => syncMutation.mutate()}
+                  >
+                    <RefreshCw className={`w-3 h-3 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                    {syncMutation.isPending ? 'Syncing…' : 'Sync Plans'}
+                  </Button>
+                  {syncMessage && (
+                    <span className='text-[10px] text-grey-500'>{syncMessage}</span>
+                  )}
+                </div>
                 <div className='flex flex-wrap items-center gap-2'>
                   <div className='relative'>
                     <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-grey-400' />
