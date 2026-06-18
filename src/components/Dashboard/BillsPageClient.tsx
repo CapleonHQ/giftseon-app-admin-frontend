@@ -135,9 +135,9 @@ const DataPlansPanel = () => {
                     </div>
                     <div className='flex flex-col items-end gap-1'>
                       <Badge variant={n.isActive ? 'success' : 'grey'} className='text-[10px]'>{n.isActive ? 'Active' : 'Off'}</Badge>
-                      <button onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ code: n.code, isActive: !n.isActive }) }}>
+                      <div role='button' tabIndex={0} onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ code: n.code, isActive: !n.isActive }) }} onKeyDown={(e) => e.key === 'Enter' && toggleMutation.mutate({ code: n.code, isActive: !n.isActive })}>
                         {n.isActive ? <ToggleRight className='w-4 h-4 text-success-500' /> : <ToggleLeft className='w-4 h-4 text-grey-400' />}
-                      </button>
+                      </div>
                     </div>
                   </div>
                 </button>
